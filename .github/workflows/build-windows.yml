@@ -49,6 +49,12 @@ jobs:
 
       - name: Build installer
         run: npm run tauri build
+        env:
+          # tauri.windows.conf.json turns on signed updater artifacts, which need
+          # the upstream maintainer's private key. This build makes none, and its
+          # updater looks at this repository's releases instead of upstream's, so
+          # it never offers to replace itself with an upstream release.
+          TAURI_CONFIG: '{"bundle":{"createUpdaterArtifacts":false},"plugins":{"updater":{"endpoints":["https://github.com/${{ github.repository }}/releases/latest/download/latest.json"]}}}'
 
       - name: Upload installer
         uses: actions/upload-artifact@v4

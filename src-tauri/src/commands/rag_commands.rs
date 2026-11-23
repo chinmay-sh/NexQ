@@ -78,8 +78,6 @@ pub async fn rebuild_file_index(
     app_handle: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let rag_arc = state.rag.as_ref()
-        .ok_or_else(|| "RAG manager not initialized".to_string())?;
     let db_arc = state.database.as_ref()
         .ok_or_else(|| "Database not initialized".to_string())?;
 
