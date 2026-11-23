@@ -5,7 +5,7 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: (...args: unknown[]) => invoke(...args),
 }));
 
-import { generateAssist, startCapturePerParty, testAzureMaiConnection } from "./ipc";
+import { generateAssist, startCapturePerParty, testAzureMaiConnection, updateGeminiLiveConfig } from "./ipc";
 import type { PartyAudioConfig } from "./types";
 import { useTranscriptStore } from "../stores/transcriptStore";
 
@@ -141,4 +141,10 @@ describe("testAzureMaiConnection", () => {
       region: "swedencentral",
     });
   });
+});
+
+it("sends Gemini Live config as JSON using the new IPC command", async () => {
+  const config = { vocabulary: ["NexQ"], mode: "SMART" as const };
+  await updateGeminiLiveConfig(config);
+  expect(invoke).toHaveBeenCalledWith("update_gemini_live_config", { configJson: JSON.stringify(config) });
 });

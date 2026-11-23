@@ -11,6 +11,7 @@ import {
   SAME_AS_SHARED_LANGUAGE,
   STT_LANGUAGES,
   sideLanguage,
+  geminiLiveLanguageHint,
   type SideLanguageHint,
 } from "../lib/sttLanguages";
 import { sideLanguageProblems, updatePartyConfig } from "../lib/sideLanguage";
@@ -156,6 +157,14 @@ const STT_OPTIONS: {
     requiresKey: true,
     isCloud: true,
   },
+  {
+    value: "gemini_live",
+    label: "Gemini Live",
+    shortLabel: "Gemini",
+    icon: <Cloud className="h-3.5 w-3.5" />,
+    requiresKey: true,
+    isCloud: true,
+  },
 ];
 
 // ── Web Speech / Windows Speech mutual exclusion ──
@@ -164,7 +173,7 @@ const STT_OPTIONS: {
 const EXCLUSIVE_PROVIDERS: STTProviderType[] = ["web_speech", "windows_native"];
 
 const EXCLUSIVE_FALLBACK_ORDER: STTProviderType[] = [
-  "deepgram", "groq_whisper", "whisper_api", "azure_speech", "azure_mai_streaming", "cartesia",
+  "deepgram", "groq_whisper", "whisper_api", "azure_speech", "azure_mai_streaming", "cartesia", "gemini_live",
   "sherpa_onnx", "ort_streaming", "parakeet_tdt",
 ];
 
@@ -328,7 +337,7 @@ export function MeetingAudioSettings() {
   }
 
   async function checkApiKeys() {
-    const providers = ["deepgram", "whisper_api", "azure_speech", "azure_mai_streaming", "groq_whisper", "cartesia"];
+    const providers = ["deepgram", "whisper_api", "azure_speech", "azure_mai_streaming", "groq_whisper", "cartesia", "gemini_live"];
     const status: Record<string, boolean> = {};
     for (const p of providers) {
       try {
@@ -464,7 +473,9 @@ export function MeetingAudioSettings() {
           otherPartyProvider={config.them.stt_provider}
           otherPartyLabel="Them"
           autoProblem={youAutoProblem}
-          languageHint={youProblems.hint}
+          languageHint={youProblems.hint ?? (config.you.stt_provider === "gemini_live" && geminiLiveLanguageHint(youLanguage)
+            ? { tone: "info", text: geminiLiveLanguageHint(youLanguage)! }
+            : null)}
           // In-person meetings don't transcribe "You": there is nothing to set.
           showLanguage={!inPerson}
           sideName="You"
@@ -488,7 +499,9 @@ export function MeetingAudioSettings() {
           otherPartyProvider={config.you.stt_provider}
           otherPartyLabel="You"
           autoProblem={themAutoProblem}
-          languageHint={themProblems.hint}
+          languageHint={themProblems.hint ?? (config.them.stt_provider === "gemini_live" && geminiLiveLanguageHint(themLanguage)
+            ? { tone: "info", text: geminiLiveLanguageHint(themLanguage)! }
+            : null)}
           showLanguage
           sideName={themLabel}
           sharedLanguageLabel={sharedLanguageLabel}

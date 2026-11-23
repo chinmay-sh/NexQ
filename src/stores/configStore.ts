@@ -12,6 +12,7 @@ import type {
   ContextStrategy,
   WhisperDualPassConfig,
   DeepgramConfig,
+  GeminiLiveConfig,
   GroqConfig,
   AudioMode,
   AIScenario,
@@ -42,6 +43,8 @@ const DEFAULT_DEEPGRAM_CONFIG: DeepgramConfig = {
   vad_events: true,
   keyterms: [],
 };
+
+const DEFAULT_GEMINI_LIVE_CONFIG: GeminiLiveConfig = { vocabulary: [], mode: "VERBATIM" };
 
 const DEFAULT_GROQ_CONFIG: GroqConfig = {
   model: "whisper-large-v3-turbo",
@@ -296,6 +299,9 @@ interface ConfigState {
   // Deepgram model/feature config
   deepgramConfig: DeepgramConfig;
 
+  // Gemini Live vocabulary and transcription style
+  geminiLiveConfig: GeminiLiveConfig;
+
   // Groq Whisper config
   groqConfig: GroqConfig;
 
@@ -429,6 +435,7 @@ interface ConfigState {
   getActiveModelForEngine: (engineId: string) => string | null;
   setWhisperDualPass: (config: WhisperDualPassConfig) => void;
   setDeepgramConfig: (config: DeepgramConfig) => void;
+  setGeminiLiveConfig: (config: GeminiLiveConfig) => void;
   setGroqConfig: (config: GroqConfig) => void;
   setPauseThresholdMs: (ms: number) => void;
   setAutoTrigger: (enabled: boolean) => void;
@@ -519,6 +526,7 @@ export const useConfigStore = create<ConfigState>((set) => ({
   verifiedCloudProviders: [],
   whisperDualPass: { shortChunkSecs: 1.0, longChunkSecs: 3.0, pauseSecs: 1.5 },
   deepgramConfig: DEFAULT_DEEPGRAM_CONFIG,
+  geminiLiveConfig: DEFAULT_GEMINI_LIVE_CONFIG,
   groqConfig: DEFAULT_GROQ_CONFIG,
   pauseThresholdMs: 3000,
   autoTrigger: true,
@@ -840,6 +848,14 @@ export const useConfigStore = create<ConfigState>((set) => ({
         .catch((e) => console.warn("[configStore] Failed to update Deepgram config:", e))
     );
   },
+  setGeminiLiveConfig: (config) => {
+    set({ geminiLiveConfig: config });
+    persistValue("geminiLiveConfig", config);
+    import("../lib/ipc").then(({ updateGeminiLiveConfig }) =>
+      updateGeminiLiveConfig(config)
+        .catch((e) => console.warn("[configStore] Failed to update Gemini Live config:", e))
+    );
+  },
   setGroqConfig: (config) => {
     set({ groqConfig: config });
     persistValue("groqConfig", config);
@@ -1085,6 +1101,7 @@ export const useConfigStore = create<ConfigState>((set) => ({
       const contextStrategy = await store.get<ContextStrategy>("contextStrategy");
       const verifiedCloudProviders = await store.get<string[]>("verifiedCloudProviders");
       const deepgramConfig = await store.get<DeepgramConfig>("deepgramConfig");
+      const geminiLiveConfig = await store.get<GeminiLiveConfig>("geminiLiveConfig");
       const groqConfig = await store.get<GroqConfig>("groqConfig");
       const pauseThresholdMs = await store.get<number>("pauseThresholdMs");
       const activeModelPerEngine = await store.get<Record<string, string>>("activeModelPerEngine");
@@ -1292,6 +1309,7 @@ export const useConfigStore = create<ConfigState>((set) => ({
         ...(contextStrategy != null && { contextStrategy }),
         ...(verifiedCloudProviders != null && { verifiedCloudProviders }),
         ...(deepgramConfig != null && { deepgramConfig }),
+        ...(geminiLiveConfig != null && { geminiLiveConfig: { ...DEFAULT_GEMINI_LIVE_CONFIG, ...geminiLiveConfig } }),
         ...(groqConfig != null && { groqConfig }),
         ...(pauseThresholdMs != null && { pauseThresholdMs }),
         ...(rememberedMeetingSetup !== undefined && { rememberedMeetingSetup: rememberedMeetingSetup ?? null }),
@@ -1367,6 +1385,9 @@ export const useConfigStore = create<ConfigState>((set) => ({
       });
       store.onKeyChange<DeepgramConfig>("deepgramConfig", (val) => {
         if (val != null) set({ deepgramConfig: { ...DEFAULT_DEEPGRAM_CONFIG, ...val } });
+      });
+      store.onKeyChange<GeminiLiveConfig>("geminiLiveConfig", (val) => {
+        if (val != null) set({ geminiLiveConfig: { ...DEFAULT_GEMINI_LIVE_CONFIG, ...val } });
       });
       store.onKeyChange<STTProviderType>("sttProvider", (val) => {
         if (val != null) set({ sttProvider: val });
@@ -1476,6 +1497,14 @@ export const useConfigStore = create<ConfigState>((set) => ({
       import("../lib/ipc").then(({ updateDeepgramConfig }) =>
         updateDeepgramConfig(loadedDgConfig)
           .catch((e) => console.warn("[configStore] Failed to sync Deepgram config on load:", e))
+      );
+
+      const loadedGeminiLiveConfig = geminiLiveConfig
+        ? { ...DEFAULT_GEMINI_LIVE_CONFIG, ...geminiLiveConfig }
+        : DEFAULT_GEMINI_LIVE_CONFIG;
+      import("../lib/ipc").then(({ updateGeminiLiveConfig }) =>
+        updateGeminiLiveConfig(loadedGeminiLiveConfig)
+          .catch((e) => console.warn("[configStore] Failed to sync Gemini Live config on load:", e))
       );
 
       // Sync persisted Groq config to Rust backend on startup.

@@ -36,6 +36,7 @@ import { STTSettings } from "./STTSettings";
 import { useConfigStore } from "../stores/configStore";
 import { useMeetingStore } from "../stores/meetingStore";
 import { open } from "@tauri-apps/plugin-shell";
+import { cleanGeminiLiveVocabulary } from "./STTSettings";
 
 const config: MeetingAudioConfig = {
   you: { role: "You", device_id: "default", is_input_device: true, stt_provider: "web_speech" },
@@ -141,6 +142,23 @@ it("keeps the Cartesia line and the other provider hints", () => {
   });
   render(<STTSettings />);
   expect(screen.getByText(/The included Parakeet models do not support Vietnamese/)).toBeInTheDocument();
+});
+
+it("cleans Gemini Live vocabulary by trimming, deduplicating case-insensitively, and capping at 1,000", () => {
+  expect(cleanGeminiLiveVocabulary(" NexQ \n\nNEXQ\n Gemini\nGemini ")).toEqual(["NexQ", "Gemini"]);
+  expect(cleanGeminiLiveVocabulary(Array.from({ length: 1001 }, (_, i) => `term${i}`).join("\n"))).toHaveLength(1000);
+});
+
+it("shows Gemini Live key fallback and Hinglish script guidance", async () => {
+  azureMai.credentials.set("gemini", "llm-key");
+  useConfigStore.setState({
+    sttLanguage: "en-IN",
+    meetingAudioConfig: { ...config, you: { ...config.you, stt_provider: "gemini_live" } },
+  });
+  render(<STTSettings />);
+  expect(await screen.findByText("Hindi-English speech comes out in Roman script (Hinglish).")).toBeInTheDocument();
+  expect(screen.getByText(/Leave empty to use your Gemini key from AI Providers/)).toBeInTheDocument();
+  expect(screen.getByRole("textbox", { name: "API Key" })).toHaveValue("");
 });
 
 it("says which sides are transcribed in a language of their own, under the shared picker", () => {

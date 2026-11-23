@@ -23,6 +23,13 @@ export function isWhisperApiConfigured(hasKey: boolean, hasBaseUrl: boolean): bo
  * Same as `hasApiKey`, except Whisper API is also configured by a custom endpoint alone.
  */
 export async function hasSttCredential(provider: string): Promise<boolean> {
+  if (provider === "gemini_live") {
+    const [hasLiveKey, hasGeminiKey] = await Promise.all([
+      hasApiKey("gemini_live").catch(() => false),
+      hasApiKey("gemini").catch(() => false),
+    ]);
+    return hasLiveKey || hasGeminiKey;
+  }
   if (provider !== WHISPER_API_KEY) return hasApiKey(provider);
   const [hasKey, hasBaseUrl] = await Promise.all([
     hasApiKey(WHISPER_API_KEY).catch(() => false),

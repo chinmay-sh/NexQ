@@ -65,6 +65,15 @@ it("offers Azure MAI Streaming in each side's cloud provider picker when its key
   }
 });
 
+it.each(["gemini_live", "gemini"])("offers Gemini Live when %s is saved", async (keyName) => {
+  savedApiKeys.add(keyName);
+  render(<MeetingAudioSettings />);
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: "You speech-to-text provider" }));
+  await user.click(await screen.findByRole("button", { name: "Gemini Live" }));
+  expect(useConfigStore.getState().meetingAudioConfig?.you.stt_provider).toBe("gemini_live");
+});
+
 it("uses MAI multilingual Auto-detect by default and keeps explicit per-side language selection", async () => {
   useConfigStore.setState({
     sttLanguage: "auto",

@@ -325,6 +325,37 @@ describe("configStore: CLI agent config", () => {
   });
 });
 
+describe("configStore: Gemini Live config", () => {
+  beforeEach(() => {
+    saved.clear();
+    invoke.mockClear();
+    vi.spyOn(console, "log").mockImplementation(() => {});
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  it("loads persisted settings and syncs them to the backend on startup", async () => {
+    const config = { vocabulary: ["NexQ"], mode: "SMART" as const };
+    saved.set("geminiLiveConfig", config);
+    const store = await freshStore();
+    await store.getState().loadConfig();
+    expect(store.getState().geminiLiveConfig).toEqual(config);
+    await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith("update_gemini_live_config", {
+      configJson: JSON.stringify(config),
+    }));
+  });
+
+  it("persists settings and pushes edits to the backend", async () => {
+    const store = await freshStore();
+    const config = { vocabulary: ["NexQ", "Hinglish"], mode: "VERBATIM" as const };
+    store.getState().setGeminiLiveConfig(config);
+    expect(store.getState().geminiLiveConfig).toEqual(config);
+    await vi.waitFor(() => expect(saved.get("geminiLiveConfig")).toEqual(config));
+    await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith("update_gemini_live_config", {
+      configJson: JSON.stringify(config),
+    }));
+  });
+});
+
 describe("configStore: capture shortcut", () => {
   beforeEach(() => {
     saved.clear();

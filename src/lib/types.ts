@@ -500,6 +500,11 @@ export interface DeepgramConfig {
   keyterms: string[];
 }
 
+export interface GeminiLiveConfig {
+  vocabulary: string[];
+  mode: "VERBATIM" | "SMART";
+}
+
 // == GROQ CONFIG ==
 
 export interface GroqConfig {
@@ -529,6 +534,7 @@ export type STTProviderType =
   | "azure_mai_streaming"
   | "groq_whisper"
   | "cartesia"
+  | "gemini_live"
   | "web_speech"
   | "sherpa_onnx"
   | "ort_streaming"

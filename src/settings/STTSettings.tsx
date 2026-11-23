@@ -12,6 +12,7 @@ import {
   STT_LANGUAGES,
   autoDetectProblem,
   cartesiaSupportsLanguage,
+  geminiLiveLanguageHint,
   isDeepgramNova3,
   sideLanguage,
   sideLanguageHint,
@@ -34,7 +35,7 @@ import {
   isInsecureRemoteHttp,
   isValidWhisperBaseUrl,
 } from "../lib/whisperApi";
-import type { STTProviderType, LocalSTTEngineInfo, DeepgramConfig, GroqConfig } from "../lib/types";
+import type { STTProviderType, LocalSTTEngineInfo, DeepgramConfig, GroqConfig, GeminiLiveConfig } from "../lib/types";
 import {
   CheckCircle,
   XCircle,
@@ -199,6 +200,14 @@ const PROVIDER_OPTIONS: ProviderOption[] = [
     isLocal: false,
     credentialKey: "cartesia",
   },
+  {
+    value: "gemini_live",
+    label: "Gemini Live",
+    description: "Real-time Gemini transcription",
+    requiresApiKey: true,
+    isLocal: false,
+    credentialKey: "gemini_live",
+  },
 ];
 
 
@@ -323,6 +332,8 @@ export function STTSettings() {
   const setSTTLanguage = useConfigStore((s) => s.setSTTLanguage);
   const activeWhisperModel = useConfigStore((s) => s.activeWhisperModel);
   const deepgramModel = useConfigStore((s) => s.deepgramConfig.model);
+  const geminiLiveConfig = useConfigStore((s) => s.geminiLiveConfig);
+  const setGeminiLiveConfig = useConfigStore((s) => s.setGeminiLiveConfig);
   // Persisted: providers whose key has been saved + tested successfully
   const verifiedCloudProviders = useConfigStore((s) => s.verifiedCloudProviders);
   const setVerifiedCloudProviders = useConfigStore((s) => s.setVerifiedCloudProviders);
@@ -341,6 +352,7 @@ export function STTSettings() {
   const [apiKey, setApiKey] = useState("");
   const [showApiKey, setShowApiKey] = useState(false);
   const [hasStoredKey, setHasStoredKey] = useState(false);
+  const [hasStoredGeminiLiveKey, setHasStoredGeminiLiveKey] = useState(false);
   const [credentialStateProvider, setCredentialStateProvider] =
     useState<STTProviderType | null>(null);
   const [credentialStateLoading, setCredentialStateLoading] = useState(false);
@@ -502,6 +514,9 @@ export function STTSettings() {
       if (p.value === "whisper_api" && (whisperSavedBaseUrl !== "" || whisperStoredKey)) {
         return { text: "Not tested", variant: "warning" };
       }
+      if (p.value === "gemini_live" && credentialStateProvider === p.value && hasStoredKey) {
+        return { text: "Not tested", variant: "warning" };
+      }
       return { text: "No Key", variant: "error" };
     }
 
@@ -536,6 +551,7 @@ export function STTSettings() {
       }
       setShowApiKey(false);
       setHasStoredKey(false);
+      setHasStoredGeminiLiveKey(false);
       setConnectionStatus("idle");
       setStatusMessage("");
 
@@ -555,12 +571,14 @@ export function STTSettings() {
       }
 
       try {
-        const keyExists = await hasApiKey(credKey);
+        let keyExists = await hasApiKey(credKey);
+        if (selectedProvider === "gemini_live") setHasStoredGeminiLiveKey(keyExists);
+        if (selectedProvider === "gemini_live" && !keyExists) keyExists = await hasApiKey("gemini");
         if (cancelled) return;
         setHasStoredKey(keyExists);
         // MAI keys are write-only in the UI: discover presence, but never
         // read the long-lived secret back into JavaScript or the input field.
-        if (keyExists && selectedProvider !== "azure_mai_streaming" && !keepTyped) {
+        if (keyExists && selectedProvider !== "azure_mai_streaming" && selectedProvider !== "gemini_live" && !keepTyped) {
           const stored = await getApiKey(credKey);
           if (cancelled) return;
           if (stored) setApiKey(stored);
@@ -809,7 +827,7 @@ export function STTSettings() {
 
   /** Save & Test: test key first, only persist on success. */
   const handleSaveAndTest = useCallback(async () => {
-    if (!apiKey.trim() || !currentProviderOption?.credentialKey) return;
+    if ((!apiKey.trim() && selectedProvider !== "gemini_live") || !currentProviderOption?.credentialKey) return;
 
     const provider = selectedProvider;
     const option = currentProviderOption;
@@ -851,6 +869,36 @@ export function STTSettings() {
         setStatusMessage("Connection successful — provider is ready");
       } catch (e) {
         if (isStillSelected()) {
+          setConnectionStatus("error");
+          setStatusMessage(`Test failed: ${e instanceof Error ? e.message : String(e)}`);
+        }
+      }
+      return;
+    }
+
+    if (provider === "gemini_live") {
+      const key = apiKey.trim();
+      const previousKey = hasStoredGeminiLiveKey ? await getApiKey("gemini_live").catch(() => null) : null;
+      try {
+        if (key) await storeApiKey("gemini_live", key);
+        else await deleteApiKey("gemini_live").catch(() => {});
+        const success = await testSTTConnection(provider);
+        if (!success) throw new Error("Connection failed");
+        updateVerifiedProvider(provider, true);
+        if (!isStillSelected()) return;
+        const configured = !!key || await hasApiKey("gemini").catch(() => false);
+        setHasStoredGeminiLiveKey(!!key);
+        setHasStoredKey(configured);
+        setKeyDirty(false);
+        setConnectionStatus("success");
+        setStatusMessage("Connection successful — provider is ready");
+      } catch (e) {
+        if (previousKey) await storeApiKey("gemini_live", previousKey).catch(() => {});
+        else await deleteApiKey("gemini_live").catch(() => {});
+        updateVerifiedProvider(provider, false);
+        if (isStillSelected()) {
+          setHasStoredGeminiLiveKey(previousKey !== null);
+          setHasStoredKey(previousKey !== null || await hasApiKey("gemini").catch(() => false));
           setConnectionStatus("error");
           setStatusMessage(`Test failed: ${e instanceof Error ? e.message : String(e)}`);
         }
@@ -901,6 +949,7 @@ export function STTSettings() {
     selectedProvider,
     currentProviderOption,
     hasStoredKey,
+    hasStoredGeminiLiveKey,
     updateVerifiedProvider,
   ]);
 
@@ -918,7 +967,8 @@ export function STTSettings() {
     updateVerifiedProvider(provider, false);
     if (selectedProviderRef.current === provider) {
       setApiKey("");
-      setHasStoredKey(false);
+      setHasStoredKey(provider === "gemini_live" ? await hasApiKey("gemini").catch(() => false) : false);
+      if (provider === "gemini_live") setHasStoredGeminiLiveKey(false);
       setKeyDirty(false);
       setConnectionStatus("idle");
       setStatusMessage("");
@@ -1124,7 +1174,23 @@ export function STTSettings() {
 
           <div className="flex gap-2">
             <div className="relative flex-1">
-              <input
+              {selectedProvider === "gemini_live" ? (
+                <textarea
+                  id="stt-provider-api-key"
+                  disabled={credentialsAreLoading || whisperTesting}
+                  value={shownApiKey}
+                  onChange={(e) => {
+                    whisperRevisionRef.current += 1;
+                    setApiKey(e.target.value);
+                    setKeyDirty(true);
+                    setConnectionStatus("idle");
+                    setStatusMessage("");
+                  }}
+                  placeholder={shownHasStoredKey && !shownKeyDirty ? "Keys stored — type to replace" : "One Gemini API key per line"}
+                  rows={3}
+                  className="w-full rounded-lg border border-border/50 bg-background px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/50 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20"
+                />
+              ) : <input
                 id="stt-provider-api-key"
                 type={showApiKey ? "text" : "password"}
                 disabled={credentialsAreLoading || whisperTesting || (selectedProvider === "azure_mai_streaming" && shownConnectionStatus === "testing")}
@@ -1149,8 +1215,8 @@ export function STTSettings() {
                 }
                 aria-describedby={showMaiKeyReentryHint ? "stt-mai-key-reentry-hint" : undefined}
                 className="w-full rounded-lg border border-border/50 bg-background px-3.5 py-2.5 pr-10 text-sm text-foreground placeholder:text-muted-foreground/50 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20"
-              />
-              <button
+              />}
+              {selectedProvider !== "gemini_live" && <button
                 onClick={() => setShowApiKey(!showApiKey)}
                 className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground"
                 type="button"
@@ -1158,18 +1224,19 @@ export function STTSettings() {
                 aria-pressed={showApiKey}
               >
                 {showApiKey ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-              </button>
+              </button>}
             </div>
 
             {/* Save & Test — shown whenever user has typed a key */}
             {(shownKeyDirty ||
               (!shownHasStoredKey && shownApiKey.trim()) ||
+              (selectedProvider === "gemini_live" && shownKeyDirty) ||
               (credentialStateReady && isWhisperApi &&
                 (whisperDirty ||
                   (whisperEndpointSet && !verifiedCloudProviders.includes("whisper_api"))))) && (
               <button
                 onClick={isWhisperApi ? handleWhisperSaveAndTest : handleSaveAndTest}
-                disabled={(!shownApiKey.trim() && !whisperEndpointSet) || shownConnectionStatus === "testing" || credentialsAreLoading}
+                disabled={(!shownApiKey.trim() && !whisperEndpointSet && selectedProvider !== "gemini_live") || shownConnectionStatus === "testing" || credentialsAreLoading}
                 className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {shownConnectionStatus === "testing" ? (
@@ -1183,6 +1250,7 @@ export function STTSettings() {
 
             {/* Clear — only if key is stored and verified, and user hasn't started typing a new one */}
             {shownHasStoredKey &&
+              (selectedProvider !== "gemini_live" || hasStoredGeminiLiveKey) &&
               (selectedProvider === "azure_mai_streaming" ? !shownApiKey.trim() : !shownKeyDirty) && (
               <button
                 onClick={handleClearApiKey}
@@ -1195,6 +1263,10 @@ export function STTSettings() {
             )}
           </div>
 
+          {selectedProvider === "gemini_live" && (
+            <p className="mt-2 text-xs text-muted-foreground">One Gemini API key per line. NexQ moves to the next key when one hits its rate limit. Leave empty to use your Gemini key from AI Providers.</p>
+          )}
+
           {/* Status feedback */}
           <div className="mt-2 min-h-[18px]" role="status" aria-live="polite">
             {credentialsAreLoading && (
@@ -1203,7 +1275,9 @@ export function STTSettings() {
             {!credentialsAreLoading && shownConnectionStatus === "success" && (
               <div className="flex items-center gap-1.5 text-xs text-success">
                 <CheckCircle className="h-3 w-3" />
-                {statusMessage}
+                {selectedProvider === "gemini_live" && !hasStoredGeminiLiveKey
+                  ? "Using Gemini key from AI Providers"
+                  : statusMessage}
               </div>
             )}
             {!credentialsAreLoading && shownConnectionStatus === "testing" && (
@@ -1217,7 +1291,9 @@ export function STTSettings() {
             )}
             {!credentialsAreLoading && shownConnectionStatus === "idle" && shownHasStoredKey && !shownKeyDirty && (
               <p className="text-xs text-success/70">
-                {selectedProvider === "azure_mai_streaming"
+                {selectedProvider === "gemini_live" && !hasStoredGeminiLiveKey
+                  ? "Gemini API key from AI Providers will be used"
+                  : selectedProvider === "azure_mai_streaming"
                   ? "API key configured and stored securely"
                   : isWhisperApi && !verifiedCloudProviders.includes("whisper_api")
                   ? "API key stored securely"
@@ -1382,7 +1458,12 @@ export function STTSettings() {
             Cartesia detects English, French, Hindi, Japanese and Spanish on its own.
           </p>
         )}
+        {selectedProvider === "gemini_live" && geminiLiveLanguageHint(youLanguage) && (
+          <p className="mt-2 text-xs text-muted-foreground">{geminiLiveLanguageHint(youLanguage)}</p>
+        )}
       </div>
+
+      {selectedProvider === "gemini_live" && <GeminiLiveSettings config={geminiLiveConfig} setConfig={setGeminiLiveConfig} />}
 
       {/* Test Connection — only for local/always-ready providers; cloud uses Save & Test in the key section */}
       {!currentProviderOption?.requiresApiKey && (
@@ -1503,6 +1584,7 @@ function ProviderIcon({ value, isSelected }: { value: STTProviderType; isSelecte
     case "azure_speech":
     case "azure_mai_streaming":
     case "cartesia":
+    case "gemini_live":
       return <Cloud className={cls} />;
     case "groq_whisper":
       return <Zap className={cls} />;
@@ -1867,6 +1949,65 @@ function DeepgramAdvancedSettings() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+export function cleanGeminiLiveVocabulary(value: string): string[] {
+  const seen = new Set<string>();
+  const terms: string[] = [];
+  for (const raw of value.split(/\r?\n/)) {
+    const term = raw.trim();
+    const normalized = term.toLowerCase();
+    if (!term || seen.has(normalized)) continue;
+    seen.add(normalized);
+    terms.push(term);
+    if (terms.length === 1000) break;
+  }
+  return terms;
+}
+
+function GeminiLiveSettings({
+  config,
+  setConfig,
+}: {
+  config: GeminiLiveConfig;
+  setConfig: (config: GeminiLiveConfig) => void;
+}) {
+  return (
+    <div className="rounded-xl border border-border/30 bg-card/50 overflow-hidden">
+      <div className="px-5 pt-4 pb-3 border-b border-border/20">
+        <div className="flex items-center gap-2">
+          <Settings2 className="h-4 w-4 text-primary" />
+          <span className="text-xs font-semibold text-foreground">Gemini Live Settings</span>
+        </div>
+      </div>
+      <div className="px-5 py-3 border-b border-border/20">
+        <label htmlFor="gemini-live-vocabulary" className="mb-1.5 block text-xs font-medium text-foreground">Custom vocabulary</label>
+        <p className="mb-2 text-meta text-muted-foreground/70">Names, product words, jargon — one term per line, up to 1,000 terms.</p>
+        <textarea
+          id="gemini-live-vocabulary"
+          rows={5}
+          value={config.vocabulary.join("\n")}
+          onChange={(e) => setConfig({ ...config, vocabulary: cleanGeminiLiveVocabulary(e.target.value) })}
+          placeholder={"NexQ\nGemini Live\nProduct terminology"}
+          className="w-full rounded-lg border border-border/50 bg-background px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/50 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20"
+        />
+      </div>
+      <fieldset className="px-5 py-3">
+        <legend className="mb-2 text-meta font-medium text-muted-foreground uppercase tracking-wider">Transcription style</legend>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {([
+            ["VERBATIM", "Verbatim (every word as spoken)"],
+            ["SMART", "Clean (drops fillers and false starts)"],
+          ] as const).map(([mode, label]) => (
+            <label key={mode} className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-xs transition-colors ${config.mode === mode ? "border-primary bg-primary/10 text-primary" : "border-border/40 text-foreground hover:bg-accent/40"}`}>
+              <input type="radio" name="gemini-live-mode" value={mode} checked={config.mode === mode} onChange={() => setConfig({ ...config, mode })} />
+              {label}
+            </label>
+          ))}
+        </div>
+      </fieldset>
     </div>
   );
 }

@@ -14,6 +14,7 @@ import type {
   AudioSessionInfo,
   ContextResource,
   DeepgramConfig,
+  GeminiLiveConfig,
   GenerateAssistOptions,
   GroqConfig,
   IpolicyStatus,
@@ -552,6 +553,10 @@ export async function deleteLocalSTTModel(
 
 export async function updateDeepgramConfig(config: DeepgramConfig): Promise<void> {
   return invoke("update_deepgram_config", { configJson: JSON.stringify(config) });
+}
+
+export async function updateGeminiLiveConfig(config: GeminiLiveConfig): Promise<void> {
+  return invoke("update_gemini_live_config", { configJson: JSON.stringify(config) });
 }
 
 // == IPC: Groq Config ==

@@ -7,6 +7,7 @@ export const STT_LANGUAGES = [
   { value: AUTO_STT_LANGUAGE, label: "Auto-detect" },
   { value: "en-US", label: "English (US)" },
   { value: "en-GB", label: "English (UK)" },
+  { value: "en-IN", label: "English (India)" },
   { value: "es-ES", label: "Spanish" },
   { value: "fr-FR", label: "French" },
   { value: "de-DE", label: "German" },
@@ -75,6 +76,7 @@ export function supportsSTTAutoDetection(
     case "whisper_api":
     case "groq_whisper":
     case "cartesia":
+    case "gemini_live":
     case "azure_mai_streaming":
       return true;
     default:
@@ -212,6 +214,8 @@ export function sideLanguageHint(
   if (language === AUTO_STT_LANGUAGE) return null;
   const model = autoDetectModelFor(side, models);
   switch (side.provider) {
+    case "gemini_live":
+      return null;
     case "parakeet_tdt":
       if (language === "vi-VN") {
         return {
@@ -313,4 +317,11 @@ const CARTESIA_LANGUAGES = ["en", "fr", "hi", "ja", "es"];
 /** Whether Cartesia ink-2 transcribes `language`, an STT_LANGUAGES value such as "fr-FR". */
 export function cartesiaSupportsLanguage(language: string): boolean {
   return CARTESIA_LANGUAGES.includes(language.split("-")[0].toLowerCase());
+}
+
+/** Gemini Live accepts every app language and automatic language detection. */
+export function geminiLiveLanguageHint(language: string): string | null {
+  if (language === "en-IN") return "Hindi-English speech comes out in Roman script (Hinglish).";
+  if (language === "hi-IN") return "Hindi comes out in Devanagari; English words stay in Latin script.";
+  return null;
 }

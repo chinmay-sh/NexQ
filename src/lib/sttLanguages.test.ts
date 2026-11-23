@@ -12,6 +12,7 @@ import {
   STT_LANGUAGES,
   autoDetectProblem,
   cartesiaSupportsLanguage,
+  geminiLiveLanguageHint,
   sideLanguage,
   sideLanguageHint,
   supportsSTTAutoDetection,
@@ -93,7 +94,15 @@ describe("supportsSTTAutoDetection", () => {
     expect(supportsSTTAutoDetection("parakeet_tdt", "parakeet-tdt-0.6b-v3-int8")).toBe(true);
     expect(supportsSTTAutoDetection("parakeet_tdt", "parakeet-tdt-ctc-110m-int8")).toBe(false);
     expect(supportsSTTAutoDetection("web_speech")).toBe(false);
+    expect(supportsSTTAutoDetection("gemini_live")).toBe(true);
   });
+});
+
+it("offers India English and Gemini Live Hinglish script hints", () => {
+  expect(STT_LANGUAGES.some((language) => language.value === "en-IN")).toBe(true);
+  expect(geminiLiveLanguageHint("en-IN")).toBe("Hindi-English speech comes out in Roman script (Hinglish).");
+  expect(geminiLiveLanguageHint("hi-IN")).toBe("Hindi comes out in Devanagari; English words stay in Latin script.");
+  expect(geminiLiveLanguageHint("fr-FR")).toBeNull();
 });
 
 describe("cartesiaSupportsLanguage", () => {

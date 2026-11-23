@@ -45,6 +45,19 @@ describe("first-run STT step vs. the load-time migration", () => {
     expect(await wizardProviders()).not.toContain("whisper_cpp");
   });
 
+  it("offers Gemini Live as a cloud provider that needs a key", async () => {
+    const choice = (await wizardChoices()).find((provider) => provider.value === "gemini_live");
+    expect(choice).toMatchObject({ label: "Gemini Live", requiresKey: true, free: false });
+  });
+
+  it("preserves Gemini Live assignments through load-time migration", async () => {
+    saved.set("meetingAudioConfig", configWith("gemini_live", "gemini_live"));
+    const store = await freshStore();
+    await store.getState().loadConfig();
+    expect(store.getState().meetingAudioConfig?.you.stt_provider).toBe("gemini_live");
+    expect(store.getState().meetingAudioConfig?.them.stt_provider).toBe("gemini_live");
+  });
+
   it("offers Azure MAI Streaming with its model and preview designation", async () => {
     const mai = (await wizardChoices()).find((provider) => provider.value === "azure_mai_streaming");
     expect(mai).toMatchObject({

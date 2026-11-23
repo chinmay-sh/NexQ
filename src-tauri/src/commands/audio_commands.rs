@@ -323,6 +323,14 @@ pub async fn start_capture(
                         p.set_language(&lang);
                         Box::new(p)
                     }
+                    STTProviderType::GeminiLive => {
+                        let keys = crate::stt::gemini_live::keys_from_store(|k| get_credential_key(&state, k));
+                        let mut p = crate::stt::gemini_live::GeminiLiveSTT::with_api_keys(keys);
+                        p.set_language(&lang);
+                        p.set_config(get_gemini_live_config(&state));
+                        p.set_app_handle(app.clone());
+                        Box::new(p)
+                    }
                     STTProviderType::Cartesia => {
                         let mut p = match ck.as_deref() {
                             Some(k) => crate::stt::cartesia::CartesiaSTT::with_api_key(k),
@@ -2115,6 +2123,16 @@ async fn create_stt_provider_for_party(
             p.set_party(party_role);
             Ok(Some(Box::new(p)))
         }
+        STTProviderType::GeminiLive => {
+            let keys = crate::stt::gemini_live::keys_from_store(|k| get_credential_key(state, k));
+            log::info!("Gemini Live keys for '{}': {}", party_role, keys.len());
+            let mut p = crate::stt::gemini_live::GeminiLiveSTT::with_api_keys(keys);
+            p.set_language(&stt_language);
+            p.set_config(get_gemini_live_config(state));
+            p.set_app_handle(app.clone());
+            p.set_party(party_role);
+            Ok(Some(Box::new(p)))
+        }
         STTProviderType::SherpaOnnx => {
             // Guard: ignore model_id from a different engine (e.g., parakeet model)
             let raw_model_id = config.local_model_id.as_deref();
@@ -2375,6 +2393,7 @@ fn supports_auto_language(provider: &crate::stt::provider::STTProviderType, mode
         STTProviderType::GroqWhisper
         | STTProviderType::WhisperApi
         | STTProviderType::Cartesia
+        | STTProviderType::GeminiLive
         | STTProviderType::AzureMaiStreaming => true,
         STTProviderType::ParakeetTdt => model.starts_with("parakeet-tdt-0.6b-v3"),
         _ => false,
@@ -2586,6 +2605,15 @@ fn get_credential_key(state: &AppState, provider: &str) -> Option<String> {
     state.credentials.as_ref()
         .and_then(|cred_arc| cred_arc.lock().ok())
         .and_then(|cred| cred.get_key(provider).ok().flatten())
+}
+
+/// The Gemini Live vocabulary and style from the STT router.
+fn get_gemini_live_config(state: &AppState) -> crate::stt::gemini_live::GeminiLiveConfig {
+    state
+        .stt
+        .as_ref()
+        .and_then(|stt| stt.lock().ok().map(|r| r.gemini_live_config.clone()))
+        .unwrap_or_default()
 }
 
 /// Get the current Deepgram config from the STT router.

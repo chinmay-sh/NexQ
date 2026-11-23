@@ -75,6 +75,14 @@ export const WIZARD_STT_PROVIDERS: ProviderChoice[] = [
     requiresKey: true,
     free: false,
   },
+  {
+    value: "gemini_live",
+    label: "Gemini Live",
+    icon: <Cloud className="h-4 w-4" />,
+    description: "Real-time Gemini transcription",
+    requiresKey: true,
+    free: false,
+  },
 ];
 
 const themProviders = WIZARD_STT_PROVIDERS.filter((p) => p.value !== "web_speech");
@@ -128,7 +136,7 @@ export function STTSetupStep() {
   // Check which API keys are stored
   useEffect(() => {
     async function check() {
-      const providers = ["deepgram", "whisper_api", "azure_speech", "azure_mai_streaming", "groq_whisper", "cartesia"];
+      const providers = ["deepgram", "whisper_api", "azure_speech", "azure_mai_streaming", "groq_whisper", "cartesia", "gemini_live"];
       const status: Record<string, boolean> = {};
       for (const p of providers) {
         try {

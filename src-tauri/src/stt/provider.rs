@@ -172,6 +172,8 @@ pub enum STTProviderType {
     ParakeetTdt,
     /// Cartesia ink-2 over WebSocket, with Cartesia's own turn detection.
     Cartesia,
+    /// Gemini Live (gemini-3.5-transcribe-live) over WebSocket.
+    GeminiLive,
 }
 
 impl STTProviderType {
@@ -189,6 +191,7 @@ impl STTProviderType {
             STTProviderType::OrtStreaming => "ort_streaming",
             STTProviderType::ParakeetTdt => "parakeet_tdt",
             STTProviderType::Cartesia => "cartesia",
+            STTProviderType::GeminiLive => super::gemini_live::ID,
         }
     }
 
@@ -206,6 +209,7 @@ impl STTProviderType {
             "ort_streaming" => Some(STTProviderType::OrtStreaming),
             "parakeet_tdt" => Some(STTProviderType::ParakeetTdt),
             "cartesia" => Some(STTProviderType::Cartesia),
+            super::gemini_live::ID => Some(STTProviderType::GeminiLive),
             _ => None,
         }
     }
@@ -448,6 +452,15 @@ pub fn list_available_providers() -> Vec<STTProviderInfo> {
                 .iter()
                 .map(|l| l.to_string())
                 .collect(),
+        },
+        STTProviderInfo {
+            provider_type: super::gemini_live::ID.to_string(),
+            name: "Gemini Live".to_string(),
+            requires_api_key: true,
+            is_local: false,
+            // Any BCP-47 code; en-IN gives romanized Hinglish, hi-IN Devanagari.
+            supported_languages: "auto en-IN hi-IN en-US en-GB es-ES fr-FR de-DE it-IT pt-BR ja-JP zh-CN ko-KR nl-NL ru-RU uk-UA ar-SA tr-TR pl-PL cs-CZ sv-SE vi-VN"
+                .split_whitespace().map(str::to_string).collect(),
         },
         STTProviderInfo {
             provider_type: "sherpa_onnx".to_string(),

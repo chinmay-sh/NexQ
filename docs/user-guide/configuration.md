@@ -65,6 +65,16 @@ NexQ uses a two-party audio model: **"You"** (microphone) and **"Them"** (system
 - **Languages**: English, French, Hindi, Japanese, Spanish. Settings warns when the selected language isn't one of them
 - **Cost**: Billed per second of audio while a channel is unmuted, silence included (about 3 credits per second for each channel that uses Cartesia). Muted time isn't billed: muting closes the stream
 
+### Gemini Live
+
+- **Setup**: Get a Google AI Studio API key. Enter one or more keys in Settings > STT Providers, one per line; NexQ moves to the next key after a rate limit. Leave empty to use the Gemini key from AI Providers
+- **Requires API Key**: Yes (the Gemini Live key or existing Gemini LLM key)
+- **Runs Locally**: No (cloud)
+- **Languages**: Auto-detect and the app's supported BCP-47 locales. Choose `en-IN` for Hinglish in Roman script or `hi-IN` for Hindi in Devanagari (English words remain in Latin script)
+- **Custom vocabulary**: Add names, product terms and jargon, one per line (up to 1,000 unique terms)
+- **Transcription style**: Verbatim keeps every spoken word; Clean drops fillers and false starts
+- **Sessions**: Each meeting opens two sessions, one for You and one for Them, so two keys can spread usage. NexQ reconnects sessions about every eight minutes because Google ends them at around ten minutes
+
 ### Azure MAI Streaming (public preview)
 
 - **Provider ID**: `azure_mai_streaming` (a separate provider from `azure_speech`)

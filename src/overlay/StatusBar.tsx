@@ -26,6 +26,7 @@ const STT_SHORT_LABELS: Record<string, string> = {
   azure_mai_streaming: "Azure MAI Streaming",
   groq_whisper: "GroqSTT",
   cartesia: "Cartesia",
+  gemini_live: "Gemini",
 };
 
 export function StatusBar() {

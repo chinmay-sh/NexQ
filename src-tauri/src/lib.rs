@@ -578,6 +578,7 @@ pub fn run() {
             stt_commands::update_whisper_dual_pass_config,
             stt_commands::estimate_deepgram_cost,
             stt_commands::update_deepgram_config,
+            stt_commands::update_gemini_live_config,
             stt_commands::update_groq_config,
             stt_commands::set_pause_threshold,
             stt_commands::get_pause_threshold,

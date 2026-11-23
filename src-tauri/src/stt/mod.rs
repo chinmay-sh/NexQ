@@ -10,6 +10,7 @@ pub mod word_diff;
 pub mod azure_mai_streaming;
 pub mod azure_speech;
 pub mod cartesia;
+pub mod gemini_live;
 pub mod groq_whisper;
 pub mod whisper_api;
 // STT Engine Overhaul: New streaming providers
@@ -126,6 +127,8 @@ pub struct STTRouter {
     pub(crate) groq_config: groq_whisper::GroqConfig,
     /// Cartesia API key (cached from credential store)
     pub(crate) cartesia_api_key: Option<String>,
+    /// Gemini Live vocabulary and style (its keys are read per party).
+    pub(crate) gemini_live_config: gemini_live::GeminiLiveConfig,
     /// Counter for generating unique segment IDs
     segment_counter: u64,
     /// Reference to the Tauri app handle for emitting events
@@ -151,6 +154,7 @@ impl STTRouter {
             groq_whisper_api_key: None,
             groq_config: groq_whisper::GroqConfig::default(),
             cartesia_api_key: None,
+            gemini_live_config: gemini_live::GeminiLiveConfig::default(),
             segment_counter: 0,
             app_handle: None,
         }
@@ -227,6 +231,13 @@ impl STTRouter {
                 }
                 p.set_language(&self.language);
                 Box::new(p)
+            }
+            STTProviderType::GeminiLive => {
+                // Created per party, with keys read from the credential store.
+                self.active_provider = None;
+                self.active_type = Some(provider_type);
+                log::info!("STTRouter: Gemini Live selected (provider created per-party)");
+                return Ok(());
             }
             STTProviderType::AzureMaiStreaming => {
                 // MAI credentials are deliberately not cached in this legacy
@@ -582,6 +593,9 @@ impl STTRouter {
             }
             STTProviderType::AzureMaiStreaming => Err(
                 "Azure MAI Streaming connection tests require app-scoped credentials".to_string(),
+            ),
+            STTProviderType::GeminiLive => Err(
+                "Gemini Live connection tests read keys from the credential store".to_string(),
             ),
             STTProviderType::GroqWhisper => {
                 let key = self

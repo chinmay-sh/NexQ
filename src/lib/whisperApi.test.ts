@@ -29,6 +29,15 @@ it("leaves other providers on the plain key check", async () => {
   expect(ipc.has).toHaveBeenCalledTimes(1);
 });
 
+it("counts either the Gemini Live key or the Gemini LLM key", async () => {
+  ipc.has.mockImplementation(async (provider: string) => provider === "gemini");
+  expect(await hasSttCredential("gemini_live")).toBe(true);
+  ipc.has.mockImplementation(async (provider: string) => provider === "gemini_live");
+  expect(await hasSttCredential("gemini_live")).toBe(true);
+  ipc.has.mockResolvedValue(false);
+  expect(await hasSttCredential("gemini_live")).toBe(false);
+});
+
 it("validates the endpoint scheme", () => {
   expect(isValidWhisperBaseUrl("")).toBe(true);
   expect(isValidWhisperBaseUrl("http://127.0.0.1:8000/v1")).toBe(true);

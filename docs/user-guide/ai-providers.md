@@ -6,7 +6,7 @@ NexQ uses two types of AI providers: **Speech-to-Text (STT)** for transcription 
 
 ![STT Providers settings panel](../../website/public/screenshots/Setting/Setting-STT%20Providers.png)
 
-NexQ supports 12 STT providers. Each channel ("You" and "Them") can use a different provider.
+NexQ supports 13 STT providers. Each channel ("You" and "Them") can use a different provider.
 
 | Provider | Type | Cost | Accuracy | Speed | Best For |
 |----------|------|------|----------|-------|----------|
@@ -15,6 +15,7 @@ NexQ supports 12 STT providers. Each channel ("You" and "Them") can use a differ
 | Groq Whisper | Cloud | Free tier | Very Good | Very Fast | High accuracy at no cost |
 | [Whisper API](#custom-whisper-endpoint-local-servers) | Cloud or self-hosted | OpenAI pricing / free self-hosted | Very Good | Batched (~5 s) | OpenAI or your own compatible server |
 | Cartesia | Cloud | Pay per second | Very Good | Real-time | Lines that end when the speaker finishes (English, French, Hindi, Japanese, Spanish) |
+| Gemini Live | Cloud | Google API pricing | Very Good | Real-time | Multilingual streaming; Hinglish script choice and custom vocabulary |
 | Whisper (local) | Local | Free | Excellent | Slow | Privacy, offline use |
 | ONNX Runtime | Local | Free | Good | Medium | Balanced local option |
 | Sherpa-ONNX | Local | Free | Good | Medium | Lightweight local option |
@@ -33,6 +34,8 @@ NexQ supports 12 STT providers. Each channel ("You" and "Them") can use a differ
 **Use Deepgram or Groq** if you need higher accuracy. Deepgram's Nova-3 model is the most accurate real-time option. Groq offers excellent accuracy on a free tier. If you rely on **Auto-Answer**, choose Deepgram's **Flux** model (Settings > STT Providers > Deepgram > Model): Flux decides when a speaker has finished, so NexQ answers a question as soon as it's asked instead of waiting 1.5 seconds of quiet, and can start on a likely finish. Choose **Flux** for English or **Flux Multilingual** for English, Spanish, French, German, Hindi, Russian, Portuguese, Japanese, Italian and Dutch. Flux doesn't tell speakers apart, so in-person meetings on Flux show a single "Room" speaker. NexQ streams silence to Flux, which needs it to hear where a turn ends, so quiet time counts toward your Deepgram usage; with Nova, NexQ skips long silence. Muting a channel closes its Flux stream, so muted time costs nothing.
 
 **Use Cartesia** if you want each transcript line to end where the speaker actually finishes a thought. Cartesia's ink-2 model decides where each turn ends from what is being said, not only from pauses. It transcribes English, French, Hindi, Japanese and Spanish, and detects which one is spoken. Cartesia bills every second of audio it receives while a channel is unmuted, silence included: about 3 credits per second for each channel that uses it. Muting a channel closes its Cartesia stream, so muted time costs nothing. To halve the cost, use Cartesia for "Them" and Web Speech for "You".
+
+**Use Gemini Live** for multilingual real-time transcription. Set the language to **English (India)** (`en-IN`) for Hinglish in Roman script or **Hindi** (`hi-IN`) for Devanagari Hindi with English words in Latin script. In Settings > STT Providers, enter several Google AI Studio API keys one per line; NexQ rotates to another key when one is rate-limited. Leave the field empty to use the Gemini key from AI Providers. Add names and jargon under Custom vocabulary and choose Verbatim or Clean transcription style. Each meeting opens two Gemini Live sessions (You and Them), so two keys spread usage; sessions reconnect automatically about every eight minutes because Google ends sessions at roughly ten minutes.
 
 **Use a local provider** if privacy is critical or you need offline capability. Whisper with the large-v3 model provides the best local accuracy, but requires significant CPU/RAM. Smaller models (tiny, base) are faster but less accurate.
 
@@ -202,7 +205,7 @@ All cloud providers require an API key. Here is where to get them:
 | Cartesia | [play.cartesia.ai](https://play.cartesia.ai/keys) | API Keys |
 | OpenAI | [platform.openai.com](https://platform.openai.com) | API Keys |
 | Anthropic | [console.anthropic.com](https://console.anthropic.com) | API Keys |
-| Google Gemini | [aistudio.google.com](https://aistudio.google.com) | Get API Key |
+| Google Gemini / Gemini Live | [aistudio.google.com](https://aistudio.google.com) | Get API Key |
 | OpenRouter | [openrouter.ai](https://openrouter.ai) | Keys |
 | Azure Speech | [portal.azure.com](https://portal.azure.com) | Cognitive Services > Speech |
 | Azure MAI Streaming | [Azure portal](https://portal.azure.com/) | Speech resource > Keys and Endpoint; see [setup steps](#set-up-azure-mai-streaming) |

@@ -48,9 +48,9 @@ pub async fn set_stt_provider(app: AppHandle, provider: String) -> Result<(), St
                         router.set_azure_speech_region(&region);
                     }
                 }
-                STTProviderType::AzureMaiStreaming => {
+                STTProviderType::AzureMaiStreaming | STTProviderType::GeminiLive => {
                     // Per-party routing reads these credentials directly when
-                    // it creates each provider; do not cache the MAI key here.
+                    // it creates each provider; do not cache them here.
                 }
                 STTProviderType::GroqWhisper => {
                     if let Ok(Some(key)) = cred.get_key("groq_whisper") {
@@ -102,6 +102,17 @@ pub async fn test_stt_connection(app: AppHandle, provider: String) -> Result<boo
         return crate::stt::azure_mai_streaming::test_azure_mai_connection(app, key, region).await;
     }
 
+    if provider_type == STTProviderType::GeminiLive {
+        use crate::stt::provider::STTProvider;
+        let keys = crate::stt::gemini_live::keys_from_store(|k| {
+            state.credentials.as_ref()?.lock().ok()?.get_key(k).ok().flatten()
+        });
+        return crate::stt::gemini_live::GeminiLiveSTT::with_api_keys(keys)
+            .test_connection()
+            .await
+            .map_err(|e| e.to_string());
+    }
+
     // Initialize STTRouter if needed
     ensure_stt_initialized(&app, &state)?;
 
@@ -135,7 +146,7 @@ pub async fn test_stt_connection(app: AppHandle, provider: String) -> Result<boo
                         router.set_azure_speech_region(&region);
                     }
                 }
-                STTProviderType::AzureMaiStreaming => {
+                STTProviderType::AzureMaiStreaming | STTProviderType::GeminiLive => {
                     // Handled above without holding the router lock.
                 }
                 STTProviderType::GroqWhisper => {
@@ -283,6 +294,19 @@ pub async fn update_deepgram_config(app: AppHandle, config_json: String) -> Resu
             .map_err(|_| "STT state lock poisoned".to_string())?;
         router.set_deepgram_config(config);
         log::info!("Deepgram config updated via IPC");
+    }
+    Ok(())
+}
+
+/// Update the Gemini Live vocabulary and style. Takes effect on the next session.
+#[command]
+pub async fn update_gemini_live_config(app: AppHandle, config_json: String) -> Result<(), String> {
+    let config: crate::stt::gemini_live::GeminiLiveConfig = serde_json::from_str(&config_json)
+        .map_err(|e| format!("Invalid Gemini Live config JSON: {}", e))?;
+    let state = app.state::<AppState>();
+    if let Some(ref stt_arc) = state.stt {
+        let mut router = stt_arc.lock().map_err(|_| "STT state lock poisoned".to_string())?;
+        router.gemini_live_config = config.normalized();
     }
     Ok(())
 }
