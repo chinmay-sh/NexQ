@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 /// RAG pipeline configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct RagConfig {
     /// Whether the RAG pipeline is enabled.
     pub enabled: bool,
@@ -19,7 +20,7 @@ pub struct RagConfig {
     pub splitting_strategy: String,
     /// Number of top results to return from search.
     pub top_k: usize,
-    /// Search mode: "hybrid", "semantic", or "keyword".
+    /// Search mode: "hybrid", "semantic", or "keyword" (BM25 only: no embeddings, no Ollama).
     pub search_mode: String,
     /// Minimum similarity score to include in results.
     pub similarity_threshold: f32,

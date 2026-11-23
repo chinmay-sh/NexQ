@@ -27,6 +27,8 @@ import type {
   PartyAudioConfig,
   RagConfig,
   RagIndexStatus,
+  RagFolder,
+  RagFolderSyncReport,
   RagSearchResult,
   RecordingInfo,
   TokenBudget,
@@ -639,6 +641,22 @@ export async function testRagAnswer(
 
 export async function removeFileRagIndex(resourceId: string): Promise<void> {
   return invoke("remove_file_rag_index", { resourceId });
+}
+
+export async function listRagFolders(): Promise<RagFolder[]> {
+  return JSON.parse(await invoke<string>("list_rag_folders"));
+}
+
+export async function addRagFolder(path: string): Promise<void> {
+  return invoke("add_rag_folder", { path });
+}
+
+export async function removeRagFolder(path: string): Promise<void> {
+  return invoke("remove_rag_folder", { path });
+}
+
+export async function syncRagFolders(): Promise<RagFolderSyncReport> {
+  return JSON.parse(await invoke<string>("sync_rag_folders"));
 }
 
 // == IPC: Settings (Sub-PRD 1) ==

@@ -5,7 +5,7 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: (...args: unknown[]) => invoke(...args),
 }));
 
-import { generateAssist, startCapturePerParty, testAzureMaiConnection, updateGeminiLiveConfig } from "./ipc";
+import { generateAssist, startCapturePerParty, testAzureMaiConnection, updateGeminiLiveConfig, listRagFolders, syncRagFolders } from "./ipc";
 import type { PartyAudioConfig } from "./types";
 import { useTranscriptStore } from "../stores/transcriptStore";
 
@@ -140,6 +140,15 @@ describe("testAzureMaiConnection", () => {
       key: "speech-key",
       region: "swedencentral",
     });
+  });
+});
+
+describe("RAG folder IPC", () => {
+  it("parses JSON string responses and sends folder paths", async () => {
+    invoke.mockResolvedValueOnce('[{"path":"/docs","exists":true,"files":2,"chunks":8}]');
+    expect(await listRagFolders()).toEqual([{ path: "/docs", exists: true, files: 2, chunks: 8 }]);
+    invoke.mockResolvedValueOnce('{"skipped":false,"indexed":1,"removed":0,"failed":0,"unchanged":2}');
+    expect(await syncRagFolders()).toEqual({ skipped: false, indexed: 1, removed: 0, failed: 0, unchanged: 2 });
   });
 });
 

@@ -654,7 +654,7 @@ export interface ContextResource {
   last_indexed_at?: string;
 }
 
-export type ContextFileType = "pdf" | "txt" | "md" | "docx";
+export type ContextFileType = string;
 
 export interface TokenBudget {
   total: number;
@@ -956,6 +956,21 @@ export interface RagIndexStatus {
   total_chunks: number;
   total_tokens: number;
   last_indexed_at: string | null;
+}
+
+export interface RagFolder {
+  path: string;
+  exists: boolean;
+  files: number;
+  chunks: number;
+}
+
+export interface RagFolderSyncReport {
+  skipped: boolean;
+  indexed: number;
+  removed: number;
+  failed: number;
+  unchanged: number;
 }
 
 export interface RagSearchResult {

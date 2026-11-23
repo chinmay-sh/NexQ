@@ -5,6 +5,8 @@ import { useContextStore } from "../stores/contextStore";
 import { useConfigStore } from "../stores/configStore";
 import { useRagStore } from "../stores/ragStore";
 
+export const CONTEXT_FILE_EXTENSIONS = "pdf docx pptx xlsx txt md markdown rst adoc tex log csv tsv json jsonl yaml yml toml ini cfg conf env xml html htm css scss less js jsx mjs cjs ts tsx vue svelte py ipynb rs go java kt kts scala swift c h cpp cc hpp cs fs rb php pl lua r dart sh bash zsh ps1 bat cmd sql graphql proto gradle tf".split(" ");
+
 export function FileUpload() {
   const loadFile = useContextStore((s) => s.loadFile);
   const contextStrategy = useConfigStore((s) => s.contextStrategy);
@@ -73,7 +75,7 @@ export function FileUpload() {
         filters: [
           {
             name: "Context Files",
-            extensions: ["pdf", "txt", "md", "docx"],
+            extensions: CONTEXT_FILE_EXTENSIONS,
           },
         ],
       });
@@ -134,7 +136,7 @@ export function FileUpload() {
               {isDragOver ? "Drop to upload" : "Drag files here"}
             </p>
             <p className="mt-1 text-xs text-muted-foreground">
-              PDF, TXT, Markdown, or DOCX
+              PDF, Office, Markdown, and code files
             </p>
             <button
               onClick={handleBrowse}

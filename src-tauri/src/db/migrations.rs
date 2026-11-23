@@ -14,6 +14,7 @@ pub fn run(conn: &Connection) -> Result<(), rusqlite::Error> {
     v6_translation_schema(conn)?;
     v7_meeting_chat(conn)?;
     v8_segment_speaker_tag(conn)?;
+    v9_rag_folder_files(conn)?;
 
     log::info!("Database migrations completed successfully");
     Ok(())
@@ -259,6 +260,19 @@ fn v8_segment_speaker_tag(conn: &Connection) -> Result<(), rusqlite::Error> {
         Err(e) if e.to_string().contains("duplicate column name") => Ok(()),
         Err(e) => Err(e),
     }
+}
+
+/// Schema v9: files indexed from knowledge-base folders, with the modified
+/// time and size they had when indexed (to spot changes).
+fn v9_rag_folder_files(conn: &Connection) -> Result<(), rusqlite::Error> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS rag_folder_files (
+            path        TEXT PRIMARY KEY NOT NULL,
+            folder      TEXT NOT NULL,
+            modified_ms INTEGER NOT NULL,
+            size        INTEGER NOT NULL
+        );",
+    )
 }
 
 /// Schema v3: In-person meeting mode — meeting metadata, speakers, bookmarks,

@@ -173,6 +173,8 @@ function getTypeConfig(fileType: string): { color: string } {
     case "md":
       return { color: "hsl(var(--info))" };
     case "docx":
+    case "pptx":
+    case "xlsx":
       return { color: "hsl(var(--primary))" };
     case "txt":
     default:

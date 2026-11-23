@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::Path;
 
-/// Load a text file (.txt or .md) and return its contents as a String.
+/// Load a text or source-code file and return its contents as a String.
 /// Tries UTF-8 first (stripping BOM if present), then falls back to Windows-1252.
 pub fn load_text_file(file_path: &str) -> Result<String, String> {
     let path = Path::new(file_path);
@@ -16,11 +16,8 @@ pub fn load_text_file(file_path: &str) -> Result<String, String> {
         .unwrap_or("")
         .to_lowercase();
 
-    if extension != "txt" && extension != "md" {
-        return Err(format!(
-            "Unsupported text file type: .{}. Expected .txt or .md",
-            extension
-        ));
+    if !crate::rag::file_processor::TEXT_EXTENSIONS.contains(&extension.as_str()) {
+        return Err(format!("Unsupported text file type: .{}", extension));
     }
 
     let bytes = fs::read(path).map_err(|e| format!("Failed to read file: {}", e))?;

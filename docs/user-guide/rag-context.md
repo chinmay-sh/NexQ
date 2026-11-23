@@ -25,9 +25,8 @@ The result: the AI can reference your documents when generating responses, makin
 | Format | Extension | Notes |
 |--------|-----------|-------|
 | PDF | `.pdf` | Text-based PDFs. Scanned image PDFs are not supported. |
-| Word | `.docx` | Microsoft Word documents |
-| Plain Text | `.txt` | Any plain text file |
-| Markdown | `.md` | Markdown formatted documents |
+| Office | `.docx`, `.pptx`, `.xlsx` | Word, PowerPoint, and Excel files |
+| Text and code | `.txt`, `.md`, `.markdown`, `.rst`, `.adoc`, `.tex`, `.log`, `.csv`, `.tsv`, `.json`, `.jsonl`, `.yaml`, `.yml`, `.toml`, `.ini`, `.cfg`, `.conf`, `.env`, `.xml`, `.html`, `.htm`, `.css`, `.scss`, `.less`, `.js`, `.jsx`, `.mjs`, `.cjs`, `.ts`, `.tsx`, `.vue`, `.svelte`, `.py`, `.ipynb`, `.rs`, `.go`, `.java`, `.kt`, `.kts`, `.scala`, `.swift`, `.c`, `.h`, `.cpp`, `.cc`, `.hpp`, `.cs`, `.fs`, `.rb`, `.php`, `.pl`, `.lua`, `.r`, `.dart`, `.sh`, `.bash`, `.zsh`, `.ps1`, `.bat`, `.cmd`, `.sql`, `.graphql`, `.proto`, `.gradle`, `.tf` | Plain text, markup, configuration, and source files |
 
 ## Loading Documents
 
@@ -59,6 +58,16 @@ When the AI needs context during a meeting, NexQ searches your indexed documents
 - **Hybrid mode** -- combines both methods for the best results (default)
 
 The top matching chunks are included in the AI prompt, limited by the token budget.
+
+### Indexing folders in place
+
+In the Context Intelligence panel, use **Add folder** to index a directory without copying its files into NexQ. Folder files are searchable knowledge-base sources, but they do not appear as loaded context resources or count toward the token budget. NexQ automatically rescans folders every minute; use **Rescan** to scan immediately. Changes are indexed in the background.
+
+Scans skip hidden directories, common generated/dependency folders (`node_modules`, `target`, `dist`, `build`, `out`, `bin`, `obj`, `__pycache__`, and `venv`), files larger than 20 MB, and Office lock files. A missing folder remains listed with a **Folder not found** warning until it is available again or removed. Remove a folder from the list to stop tracking it; its indexed chunks are removed in the background.
+
+### Keyword search without Ollama
+
+Choose **Keyword (BM25) — no Ollama needed** in Search Mode (or use the **Fastest** preset). Keyword mode indexes and searches with BM25 and does not call Ollama for embeddings. It is suitable for exact names, terms, and phrases. Hybrid and semantic modes use embeddings; they need Ollama for indexing and fall back to keyword results if Ollama is unreachable during search.
 
 ## Configuration
 

@@ -34,10 +34,11 @@ pub async fn rebuild_rag_index(
     let db_arc = state.database.as_ref()
         .ok_or_else(|| "Database not initialized".to_string())?;
 
-    // Clear existing index
+    // Clear existing index (folder files are re-indexed below)
     {
         let db = db_arc.lock().map_err(|e| e.to_string())?;
         RagManager::clear_index(db.connection())?;
+        rag::folders::clear_files(db.connection())?;
     }
 
     // Re-index each file
@@ -61,6 +62,10 @@ pub async fn rebuild_rag_index(
                 &embedder_url,
             ).await?;
         }
+    }
+
+    if let Some(rag_mgr) = state.rag.as_ref() {
+        rag::folders::sync(db_arc, rag_mgr, &app_handle).await?;
     }
 
     // Emit completion event
@@ -140,6 +145,7 @@ pub async fn clear_rag_index(
 
     let db = db_arc.lock().map_err(|e| e.to_string())?;
     RagManager::clear_index(db.connection())?;
+    rag::folders::clear_files(db.connection())?;
 
     log::info!("RAG index cleared");
     Ok(())
@@ -214,11 +220,75 @@ pub async fn update_rag_config(
     let new_config: RagConfig = serde_json::from_str(&config_json)
         .map_err(|e| format!("Failed to parse RAG config: {}", e))?;
 
+    // Saved so the settings (keyword mode especially) survive a restart.
+    if let Some(db) = state.database.as_ref().and_then(|db| db.lock().ok()) {
+        if let Ok(json) = serde_json::to_string(&new_config) {
+            rag::folders::set_state(db.connection(), rag::folders::CONFIG_KEY, &json)?;
+        }
+    }
+
     let mut mgr = rag_arc.lock().map_err(|e| e.to_string())?;
     mgr.update_config(new_config);
 
     log::info!("RAG config updated");
     Ok(())
+}
+
+/// The knowledge-base folders with their indexed file and chunk counts (JSON).
+#[command]
+pub async fn list_rag_folders(state: State<'_, AppState>) -> Result<String, String> {
+    let db_arc = state.database.as_ref().ok_or_else(|| "Database not initialized".to_string())?;
+    let db = db_arc.lock().map_err(|e| e.to_string())?;
+    serde_json::to_string(&rag::folders::folder_infos(db.connection())).map_err(|e| e.to_string())
+}
+
+/// Add a folder to the knowledge base and index it in the background.
+#[command]
+pub async fn add_rag_folder(path: String, app_handle: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    let path = path.trim().to_string();
+    if !std::path::Path::new(&path).is_dir() {
+        return Err(format!("Not a folder: {}", path));
+    }
+    let db_arc = state.database.as_ref().ok_or_else(|| "Database not initialized".to_string())?;
+    {
+        let db = db_arc.lock().map_err(|e| e.to_string())?;
+        let mut folders = rag::folders::load_folders(db.connection());
+        if folders.iter().any(|f| f.eq_ignore_ascii_case(&path)) {
+            return Ok(());
+        }
+        folders.push(path);
+        rag::folders::save_folders(db.connection(), &folders)?;
+    }
+    spawn_folder_sync(app_handle);
+    Ok(())
+}
+
+/// Remove a folder; its files leave the index in the background.
+#[command]
+pub async fn remove_rag_folder(path: String, app_handle: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    let db_arc = state.database.as_ref().ok_or_else(|| "Database not initialized".to_string())?;
+    {
+        let db = db_arc.lock().map_err(|e| e.to_string())?;
+        let folders: Vec<String> = rag::folders::load_folders(db.connection()).into_iter().filter(|f| f != &path).collect();
+        rag::folders::save_folders(db.connection(), &folders)?;
+    }
+    spawn_folder_sync(app_handle);
+    Ok(())
+}
+
+/// Rescan the folders now and report what changed (JSON SyncReport).
+#[command]
+pub async fn sync_rag_folders(app_handle: AppHandle) -> Result<String, String> {
+    let report = rag::folders::sync_app(&app_handle).await?;
+    serde_json::to_string(&report).map_err(|e| e.to_string())
+}
+
+fn spawn_folder_sync(app_handle: AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        if let Err(e) = rag::folders::sync_app(&app_handle).await {
+            log::warn!("RAG folders: sync failed: {}", e);
+        }
+    });
 }
 
 #[command]

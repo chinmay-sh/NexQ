@@ -79,24 +79,12 @@ impl ContextManager {
         }
 
         // Determine file type from extension
-        let extension = source_path
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("")
-            .to_lowercase();
-
-        let file_type = match extension.as_str() {
-            "pdf" => "pdf",
-            "txt" => "txt",
-            "md" => "md",
-            "docx" => "docx",
-            _ => {
-                return Err(format!(
-                    "Unsupported file type: .{}. Supported: .pdf, .txt, .md, .docx",
-                    extension
-                ))
-            }
-        };
+        let file_type = crate::rag::file_processor::file_type_for(source_path).ok_or_else(|| {
+            format!(
+                "Unsupported file type: {}. Supported: PDF, Word, PowerPoint, Excel, text and code files",
+                file_path
+            )
+        })?;
 
         // Generate a unique resource ID
         let resource_id = Uuid::new_v4().to_string();
@@ -121,18 +109,10 @@ impl ContextManager {
             .unwrap_or(0);
 
         // Extract text based on file type — clean up copied file on failure
-        let text = match file_type {
-            "pdf" => pdf_extractor::extract_text_from_pdf(
-                dest_path.to_str().unwrap_or(file_path),
-            ),
-            "txt" | "md" => file_loader::load_text_file(
-                dest_path.to_str().unwrap_or(file_path),
-            ),
-            "docx" => crate::rag::file_processor::extract_docx_text(
-                dest_path.to_str().unwrap_or(file_path),
-            ),
-            _ => Ok(String::new()),
-        }
+        let text = crate::rag::file_processor::extract_text(
+            dest_path.to_str().unwrap_or(file_path),
+            &file_type,
+        )
         .map_err(|e| {
             let _ = fs::remove_file(&dest_path);
             e
@@ -160,7 +140,7 @@ impl ContextManager {
         let resource = ContextResource {
             id: resource_id.clone(),
             name: file_name,
-            file_type: file_type.to_string(),
+            file_type,
             file_path: dest_path
                 .to_str()
                 .unwrap_or("")
@@ -205,12 +185,7 @@ impl ContextManager {
         }
 
         // Re-extract text (needed for context-stuffing mode and token budget)
-        let text = match resource.file_type.as_str() {
-            "pdf" => pdf_extractor::extract_text_from_pdf(&resource.file_path)?,
-            "txt" | "md" => file_loader::load_text_file(&resource.file_path)?,
-            "docx" => crate::rag::file_processor::extract_docx_text(&resource.file_path)?,
-            _ => String::new(),
-        };
+        let text = crate::rag::file_processor::extract_text(&resource.file_path, &resource.file_type)?;
 
         let token_count = count_tokens(&text);
 

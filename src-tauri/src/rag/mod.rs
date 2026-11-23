@@ -6,6 +6,7 @@ pub mod fts_store;
 pub mod search;
 pub mod prompt_builder;
 pub mod file_processor;
+pub mod folders;
 pub mod transcript_indexer;
 
 use std::sync::{Arc, Mutex};
@@ -155,11 +156,13 @@ impl RagManager {
                 .map_err(|e| format!("Failed to insert chunks for {}: {}", file_name, e))?;
         } // lock released before async work
 
-        // Phase 3: Embed in batches (async, no DB lock held)
+        // Phase 3: Embed in batches (async, no DB lock held). Keyword mode
+        // searches the chunks with BM25 alone, so it needs no embeddings.
         let mut chunks_embedded: usize = 0;
         let mut batch_embeddings: Vec<(String, Vec<u8>)> = Vec::new();
+        let batch_starts = if config.search_mode == "keyword" { 0..0 } else { 0..chunk_records.len() };
 
-        for batch_start in (0..chunk_records.len()).step_by(config.batch_size) {
+        for batch_start in batch_starts.step_by(config.batch_size.max(1)) {
             let batch_end = (batch_start + config.batch_size).min(chunk_records.len());
             let batch = &chunk_records[batch_start..batch_end];
 
@@ -250,9 +253,16 @@ impl RagManager {
     ) -> Result<Vec<ScoredChunk>, String> {
         let embedder = OllamaEmbedder::new(embedder_url);
 
-        // Embed the query (needed for semantic and hybrid modes)
+        // Embed the query (needed for semantic and hybrid modes). When the
+        // embedding server is unreachable, search by keyword instead of failing.
         let query_embedding = if config.search_mode != "keyword" {
-            Some(embedder.embed_query(query, model).await?)
+            match embedder.embed_query(query, model).await {
+                Ok(embedding) => Some(embedding),
+                Err(e) => {
+                    log::warn!("RAG: couldn't embed the query ({}); searching by keyword", e);
+                    None
+                }
+            }
         } else {
             None
         };
@@ -263,28 +273,18 @@ impl RagManager {
             .map_err(|e| format!("Failed to acquire database lock: {}", e))?;
         let conn = db_guard.connection();
 
-        match config.search_mode.as_str() {
-            "hybrid" => {
-                let query_emb = query_embedding
-                    .as_ref()
-                    .ok_or("Query embedding required for hybrid search")?;
-
+        match (config.search_mode.as_str(), query_embedding.as_ref()) {
+            ("hybrid", Some(query_emb)) => {
                 // Load all stored embeddings for vector search
                 let stored = load_all_embeddings(conn)?;
-
                 search::hybrid_search(conn, query_emb, query, config, &stored)
             }
-            "semantic" => {
-                let query_emb = query_embedding
-                    .as_ref()
-                    .ok_or("Query embedding required for semantic search")?;
-
+            ("semantic", Some(query_emb)) => {
                 let stored = load_all_embeddings(conn)?;
-
                 search::semantic_only_search(conn, query_emb, config, &stored)
             }
-            "keyword" => search::keyword_only_search(conn, query, config),
-            other => Err(format!("Unknown search mode: {}", other)),
+            ("keyword" | "hybrid" | "semantic", _) => search::keyword_only_search(conn, query, config),
+            (other, _) => Err(format!("Unknown search mode: {}", other)),
         }
     }
 

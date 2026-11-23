@@ -15,6 +15,7 @@ import type {
   OllamaPullProgressEvent,
   QuestionDetectedEvent,
   RagIndexProgressEvent,
+  RagFolderSyncReport,
   StreamActivityEvent,
   StreamEndEvent,
   StreamErrorEvent,
@@ -165,6 +166,10 @@ export function onRagIndexProgress(
   return listen<RagIndexProgressEvent>("rag_index_progress", (e) =>
     handler(e.payload)
   );
+}
+
+export function onRagFoldersSynced(handler: (report: RagFolderSyncReport) => void): Promise<UnlistenFn> {
+  return listen<RagFolderSyncReport>("rag_folders_synced", (e) => handler(e.payload));
 }
 
 export function onOllamaPullProgress(

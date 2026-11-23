@@ -39,7 +39,7 @@ const PRESETS = [
     label: "Fastest",
     ms: "~10ms",
     icon: Zap,
-    description: "Keyword-only search, no embedding needed at query time",
+    description: "Keyword (BM25) — no Ollama needed",
     config: {
       search_mode: "keyword",
       top_k: 3,
@@ -383,14 +383,17 @@ export function ContextStrategySettings() {
   const [confirmClear, setConfirmClear] = useState(false);
   const [confirmRebuild, setConfirmRebuild] = useState(false);
   const [localConfig, setLocalConfig] = useState<RagConfig>(DEFAULT_RAG_CONFIG);
+  const keywordMode = localConfig.search_mode === "keyword";
   const [openHelp, setOpenHelp] = useState<string | null>(null);
 
   useRagEvents();
 
   useEffect(() => {
-    loadRagConfig();
     refreshIndexStatus();
-    checkOllamaStatus();
+    void (async () => {
+      await loadRagConfig();
+      if (useRagStore.getState().ragConfig?.search_mode !== "keyword") checkOllamaStatus();
+    })();
   }, [loadRagConfig, refreshIndexStatus, checkOllamaStatus]);
 
   useEffect(() => {
@@ -580,13 +583,13 @@ export function ContextStrategySettings() {
               })}
             </div>
             <p className="mt-2.5 text-meta text-muted-foreground/70 leading-relaxed">
-              Latency = query embedding + chunk search. Fastest uses keyword-only (no embedding).
+              Latency = query embedding + chunk search. Fastest uses Keyword (BM25) — no Ollama needed.
               Accurate presets produce smaller chunks and retrieve more — requires index rebuild.
             </p>
           </div>
 
           {/* ── Connection ── */}
-          <div className="rounded-xl border border-border/30 bg-card/50 p-5">
+          {!keywordMode && <div className="rounded-xl border border-border/30 bg-card/50 p-5">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-semibold text-primary/80">Connection</h3>
             </div>
@@ -698,7 +701,7 @@ export function ContextStrategySettings() {
                 </div>
               )}
             </div>
-          </div>
+          </div>}
 
           {/* ── Search Settings ── */}
           <div className="rounded-xl border border-border/30 bg-card/50 p-5">
@@ -739,7 +742,7 @@ export function ContextStrategySettings() {
                 >
                   <option value="hybrid">Hybrid (recommended)</option>
                   <option value="semantic">Semantic Only</option>
-                  <option value="keyword">Keyword Only (fastest)</option>
+                  <option value="keyword">Keyword (BM25) — no Ollama needed</option>
                 </select>
               </div>
             </div>

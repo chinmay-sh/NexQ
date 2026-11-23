@@ -253,7 +253,7 @@ export function TestSearchDialog({ isOpen, onClose }: TestSearchDialogProps) {
         <div className="flex items-center gap-4 border-b border-border/20 bg-accent/10 px-6 py-2 text-meta text-muted-foreground">
           <span className="flex items-center gap-1" title="Search model">
             <Sparkles className="h-3 w-3" />
-            {ragConfig?.embedding_model ?? "nomic-embed-text"}
+            {ragConfig?.search_mode === "keyword" ? "Keyword (BM25)" : ragConfig?.embedding_model ?? "nomic-embed-text"}
           </span>
           <span className="flex items-center gap-1">
             <Hash className="h-3 w-3" />
@@ -446,8 +446,8 @@ export function TestSearchDialog({ isOpen, onClose }: TestSearchDialogProps) {
                       <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
                         {idx + 1}
                       </span>
-                      <span className="text-xs font-medium text-foreground truncate flex-1">
-                        {result.source_file}
+                      <span title={result.source_file} className="text-xs font-medium text-foreground truncate flex-1">
+                        {/[/\\]/.test(result.source_file) ? result.source_file.split(/[\\/]/).pop() : result.source_file}
                       </span>
                       <span className="text-meta text-muted-foreground/60">
                         #{result.chunk_index}

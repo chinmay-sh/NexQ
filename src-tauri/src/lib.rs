@@ -195,7 +195,14 @@ pub fn run() {
             log::info!("Context manager initialized");
 
             // -- Initialize RagManager --
-            let rag_config = rag::config::RagConfig::default();
+            // Saved settings, or the defaults on first run.
+            let rag_config = app_state
+                .database
+                .as_ref()
+                .and_then(|db| db.lock().ok())
+                .and_then(|db| rag::folders::get_state(db.connection(), rag::folders::CONFIG_KEY))
+                .and_then(|json| serde_json::from_str(&json).ok())
+                .unwrap_or_default();
             let rag_mgr = rag::RagManager::new(rag_config);
             app_state.rag = Some(Arc::new(Mutex::new(rag_mgr)));
             log::info!("RAG manager initialized");
@@ -327,6 +334,9 @@ pub fn run() {
             ));
 
             app.manage(app_state);
+
+            // Keep knowledge-base folders indexed as their files change.
+            tauri::async_runtime::spawn(rag::folders::run_rescans(app.handle().clone()));
 
             // -- Auto-detect first Ollama model in background --
             let auto_detect_app = app.handle().clone();
@@ -677,6 +687,10 @@ pub fn run() {
             rag_commands::test_rag_search,
             rag_commands::get_rag_config,
             rag_commands::update_rag_config,
+            rag_commands::list_rag_folders,
+            rag_commands::add_rag_folder,
+            rag_commands::remove_rag_folder,
+            rag_commands::sync_rag_folders,
             rag_commands::test_ollama_embedding_connection,
             rag_commands::pull_embedding_model,
             rag_commands::test_rag_answer,

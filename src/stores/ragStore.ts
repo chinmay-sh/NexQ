@@ -4,6 +4,8 @@ import type {
   RagIndexStatus,
   RagSearchResult,
   OllamaEmbeddingStatus,
+  RagFolder,
+  RagFolderSyncReport,
 } from "../lib/types";
 import {
   getRagConfig,
@@ -16,6 +18,10 @@ import {
   testRagSearch as ipcTestRagSearch,
   testOllamaEmbeddingConnection,
   pullEmbeddingModel as ipcPullEmbeddingModel,
+  listRagFolders as ipcListRagFolders,
+  addRagFolder as ipcAddRagFolder,
+  removeRagFolder as ipcRemoveRagFolder,
+  syncRagFolders as ipcSyncRagFolders,
 } from "../lib/ipc";
 import { useConfigStore } from "./configStore";
 import { showToast } from "./toastStore";
@@ -61,6 +67,8 @@ interface RagState {
   sourcesChangedSinceBuild: boolean;
   // Background auto-indexing (triggered by file add/remove)
   isAutoIndexing: boolean;
+  ragFolders: RagFolder[];
+  isSyncingFolders: boolean;
 
   // Actions
   loadRagConfig: () => Promise<void>;
@@ -80,6 +88,10 @@ interface RagState {
   resetTestSearch: () => void;
   autoIndexFile: (resourceId: string) => Promise<void>;
   autoRemoveFileIndex: (resourceId: string) => Promise<void>;
+  loadRagFolders: () => Promise<void>;
+  addFolder: (path: string) => Promise<void>;
+  removeFolder: (path: string) => Promise<void>;
+  syncFolders: () => Promise<RagFolderSyncReport | null>;
 }
 
 export const useRagStore = create<RagState>((set) => ({
@@ -98,6 +110,39 @@ export const useRagStore = create<RagState>((set) => ({
   indexStale: false,
   sourcesChangedSinceBuild: false,
   isAutoIndexing: false,
+  ragFolders: [],
+  isSyncingFolders: false,
+
+  loadRagFolders: async () => {
+    try { set({ ragFolders: await ipcListRagFolders() }); }
+    catch (e) { console.warn("[ragStore] Failed to load folders:", e); }
+  },
+  addFolder: async (path) => {
+    try {
+      await ipcAddRagFolder(path);
+      await useRagStore.getState().loadRagFolders();
+    } catch (e) { showToast(e instanceof Error ? e.message : String(e), "error"); }
+  },
+  removeFolder: async (path) => {
+    try {
+      await ipcRemoveRagFolder(path);
+      await useRagStore.getState().loadRagFolders();
+      await useRagStore.getState().refreshIndexStatus();
+    } catch (e) { showToast(e instanceof Error ? e.message : String(e), "error"); }
+  },
+  syncFolders: async () => {
+    set({ isSyncingFolders: true });
+    try {
+      const report = await ipcSyncRagFolders();
+      await useRagStore.getState().loadRagFolders();
+      await useRagStore.getState().refreshIndexStatus();
+      showToast(report.skipped ? "Folder scan already running" : `Folders scanned: ${report.indexed} indexed, ${report.removed} removed, ${report.failed} failed`, report.failed ? "warning" : "success");
+      return report;
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : String(e), "error");
+      return null;
+    } finally { set({ isSyncingFolders: false }); }
+  },
 
   loadRagConfig: async () => {
     try {
@@ -156,6 +201,7 @@ export const useRagStore = create<RagState>((set) => ({
   },
 
   checkOllamaStatus: async () => {
+    if (useRagStore.getState().ragConfig?.search_mode === "keyword") return;
     set({ isCheckingConnection: true });
     try {
       const status = await testOllamaEmbeddingConnection();
@@ -220,7 +266,7 @@ export const useRagStore = create<RagState>((set) => ({
       showToast(`Model "${model}" pulled successfully`, "success");
       set({ isPullingModel: false, pullProgress: null });
       // Refresh connection status to reflect newly available model
-      useRagStore.getState().checkOllamaStatus();
+      if (useRagStore.getState().ragConfig?.search_mode !== "keyword") useRagStore.getState().checkOllamaStatus();
     } catch (e) {
       console.error("[ragStore] Failed to pull model:", e);
       const msg = e instanceof Error ? e.message : String(e);
