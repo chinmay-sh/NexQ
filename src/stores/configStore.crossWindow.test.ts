@@ -153,6 +153,25 @@ describe("configStore: hotkeys across windows", () => {
   });
 });
 
+describe("configStore: meeting copilot preferences across windows", () => {
+  beforeEach(() => {
+    saved.clear();
+    keyListeners.length = 0;
+    invoke.mockClear();
+  });
+  it("persists defaults and synchronizes copilot settings", async () => {
+    const launcher = await openWindow();
+    const overlay = await openWindow();
+    expect(launcher.getState()).toMatchObject({ copilotEnabled: false, copilotIntervalSeconds: 10, copilotAnswerQuestions: true, copilotWebSearch: false, copilotModel: "" });
+    launcher.getState().setCopilotEnabled(true);
+    launcher.getState().setCopilotIntervalSeconds(20);
+    launcher.getState().setCopilotModel("model-x");
+    await vi.waitFor(() => expect(overlay.getState()).toMatchObject({ copilotEnabled: true, copilotIntervalSeconds: 20, copilotModel: "model-x" }));
+    const nextStart = await openWindow();
+    expect(nextStart.getState()).toMatchObject({ copilotEnabled: true, copilotIntervalSeconds: 20, copilotModel: "model-x" });
+  });
+});
+
 /** A write from some other window (the plugin-store notifies every listener). */
 function launcherWrite(key: string, value: unknown) {
   saved.set(key, value);

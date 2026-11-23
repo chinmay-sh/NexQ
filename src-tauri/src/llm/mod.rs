@@ -262,6 +262,9 @@ pub fn create_provider(config: &ProviderConfig) -> Result<Box<dyn LLMProvider>, 
 /// Routes to active LLM provider, supports hot-switching and cancellation.
 pub struct LLMRouter {
     active_provider: Option<Arc<TokioMutex<Box<dyn LLMProvider>>>>,
+    /// The settings the active provider was built from (for callers that need
+    /// a client of their own, such as the copilot).
+    active_config: Option<ProviderConfig>,
     active_model: String,
     active_provider_type: Option<ProviderType>,
     cancel_token: Arc<TokioMutex<bool>>,
@@ -271,6 +274,7 @@ impl LLMRouter {
     pub fn new() -> Self {
         Self {
             active_provider: None,
+            active_config: None,
             active_model: String::new(),
             active_provider_type: None,
             cancel_token: Arc::new(TokioMutex::new(false)),
@@ -287,7 +291,13 @@ impl LLMRouter {
 
         self.active_provider = Some(Arc::new(TokioMutex::new(provider)));
         self.active_provider_type = Some(provider_type);
+        self.active_config = Some(config);
         Ok(())
+    }
+
+    /// The settings the active provider was built from.
+    pub fn active_config(&self) -> Option<&ProviderConfig> {
+        self.active_config.as_ref()
     }
 
     /// Get a reference to the active provider (behind a tokio mutex for async access).

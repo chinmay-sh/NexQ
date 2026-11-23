@@ -51,6 +51,8 @@ import type {
   NotesFolderInfo,
   PersonalSourcesConfig,
   SourceToggles,
+  CopilotRequest,
+  CopilotResponse,
 } from "./types";
 
 // == IPC: Audio (Sub-PRD 3) ==
@@ -1047,6 +1049,11 @@ export async function openSourceFile(path: string): Promise<void> {
 }
 
 // == IPC: Ask this meeting ==
+
+/** One silent copilot tick, or one immediate answer to a detected question. */
+export async function copilotTick(request: CopilotRequest): Promise<CopilotResponse> {
+  return invoke<CopilotResponse>("copilot_tick", { request });
+}
 
 /**
  * Ask a question about a past meeting. The answer streams through the

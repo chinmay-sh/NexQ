@@ -1,6 +1,7 @@
 pub mod audio;
 pub mod commands;
 pub mod context;
+pub mod copilot;
 pub mod credentials;
 pub mod db;
 pub mod intelligence;
@@ -35,6 +36,7 @@ use commands::log_commands;
 use commands::intelligence_commands;
 // == MODULE COMMANDS: context ==
 use commands::context_commands;
+use commands::copilot_commands;
 // == MODULE COMMANDS: credentials ==
 use commands::credential_commands;
 // == MODULE COMMANDS: meetings ==
@@ -688,6 +690,7 @@ pub fn run() {
             rag_commands::get_rag_config,
             rag_commands::update_rag_config,
             rag_commands::list_rag_folders,
+            copilot_commands::copilot_tick,
             rag_commands::add_rag_folder,
             rag_commands::remove_rag_folder,
             rag_commands::sync_rag_folders,

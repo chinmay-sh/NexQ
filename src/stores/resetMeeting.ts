@@ -25,6 +25,7 @@ export async function resetMeetingScopedStores(): Promise<void> {
     { useTranslationStore },
     { useAudioPlayerStore },
     { useQuestionStore },
+    { useCopilotStore },
   ] = await Promise.all([
     import("./transcriptStore"),
     import("./streamStore"),
@@ -37,6 +38,7 @@ export async function resetMeetingScopedStores(): Promise<void> {
     import("./translationStore"),
     import("./audioPlayerStore"),
     import("./questionStore"),
+    import("./copilotStore"),
   ]);
 
   // Transcript + live streaming AI response
@@ -51,6 +53,7 @@ export async function resetMeetingScopedStores(): Promise<void> {
   useActionItemStore.getState().clearItems();
   useTopicSectionStore.getState().clearSections();
   useQuestionStore.getState().clear();
+  useCopilotStore.getState().reset();
 
   // Speaker identity + stats
   useSpeakerStore.getState().reset();

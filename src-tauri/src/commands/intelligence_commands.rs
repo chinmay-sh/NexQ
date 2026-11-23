@@ -135,18 +135,18 @@ fn count_total_segments(segments_json: &str) -> usize {
 /// Document excerpts found by RAG retrieval for one request, plus the
 /// metadata the AI Log shows.
 #[derive(Default)]
-struct RagRetrieval {
+pub(crate) struct RagRetrieval {
     /// Formatted excerpts for the prompt (empty when nothing matched).
     context_text: String,
     query: Option<String>,
-    chunks: Vec<RagChunkInfo>,
+    pub(crate) chunks: Vec<RagChunkInfo>,
     filtered: usize,
     total_candidates: usize,
 }
 
 /// Search the indexed documents for `question_text` and the recent
 /// transcript (`transcript_excerpt`), keeping the `top_k` best chunks.
-async fn retrieve_rag(
+pub(crate) async fn retrieve_rag(
     state: &AppState,
     question_text: Option<String>,
     transcript_excerpt: String,

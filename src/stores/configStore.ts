@@ -312,6 +312,11 @@ interface ConfigState {
   autoTrigger: boolean;
   autoSummary: boolean;
   contextWindowSeconds: number;
+  copilotEnabled: boolean;
+  copilotIntervalSeconds: number;
+  copilotAnswerQuestions: boolean;
+  copilotWebSearch: boolean;
+  copilotModel: string;
 
   // System
   startOnLogin: boolean;
@@ -441,6 +446,11 @@ interface ConfigState {
   setAutoTrigger: (enabled: boolean) => void;
   setAutoSummary: (enabled: boolean) => void;
   setContextWindowSeconds: (seconds: number) => void;
+  setCopilotEnabled: (enabled: boolean) => void;
+  setCopilotIntervalSeconds: (seconds: number) => void;
+  setCopilotAnswerQuestions: (enabled: boolean) => void;
+  setCopilotWebSearch: (enabled: boolean) => void;
+  setCopilotModel: (model: string) => void;
   setStartOnLogin: (enabled: boolean) => void;
   setDataDirectory: (dir: string) => void;
   setFirstRunCompleted: (completed: boolean) => void;
@@ -532,6 +542,11 @@ export const useConfigStore = create<ConfigState>((set) => ({
   autoTrigger: true,
   autoSummary: true,
   contextWindowSeconds: 120,
+  copilotEnabled: false,
+  copilotIntervalSeconds: 10,
+  copilotAnswerQuestions: true,
+  copilotWebSearch: false,
+  copilotModel: "",
   startOnLogin: false,
   dataDirectory: "",
   firstRunCompleted: false,
@@ -886,6 +901,11 @@ export const useConfigStore = create<ConfigState>((set) => ({
     set({ contextWindowSeconds: seconds });
     persistValue("contextWindowSeconds", seconds);
   },
+  setCopilotEnabled: (enabled) => { set({ copilotEnabled: enabled }); persistValue("copilotEnabled", enabled); },
+  setCopilotIntervalSeconds: (seconds) => { set({ copilotIntervalSeconds: seconds }); persistValue("copilotIntervalSeconds", seconds); },
+  setCopilotAnswerQuestions: (enabled) => { set({ copilotAnswerQuestions: enabled }); persistValue("copilotAnswerQuestions", enabled); },
+  setCopilotWebSearch: (enabled) => { set({ copilotWebSearch: enabled }); persistValue("copilotWebSearch", enabled); },
+  setCopilotModel: (model) => { set({ copilotModel: model }); persistValue("copilotModel", model); },
   setStartOnLogin: (enabled) => {
     set({ startOnLogin: enabled });
     persistValue("startOnLogin", enabled);
@@ -1087,6 +1107,11 @@ export const useConfigStore = create<ConfigState>((set) => ({
       const autoTrigger = await store.get<boolean>("autoTrigger");
       const autoSummary = await store.get<boolean>("autoSummary");
       const contextWindowSeconds = await store.get<number>("contextWindowSeconds");
+      const copilotEnabled = await store.get<boolean>("copilotEnabled");
+      const copilotIntervalSeconds = await store.get<number>("copilotIntervalSeconds");
+      const copilotAnswerQuestions = await store.get<boolean>("copilotAnswerQuestions");
+      const copilotWebSearch = await store.get<boolean>("copilotWebSearch");
+      const copilotModel = await store.get<string>("copilotModel");
       const startOnLogin = await store.get<boolean>("startOnLogin");
       const dataDirectory = await store.get<string>("dataDirectory");
       const firstRunCompleted = await store.get<boolean>("firstRunCompleted");
@@ -1299,6 +1324,11 @@ export const useConfigStore = create<ConfigState>((set) => ({
         ...(autoTrigger != null && { autoTrigger }),
         ...(autoSummary != null && { autoSummary }),
         ...(contextWindowSeconds != null && { contextWindowSeconds }),
+        copilotEnabled: copilotEnabled ?? false,
+        copilotIntervalSeconds: copilotIntervalSeconds ?? 10,
+        copilotAnswerQuestions: copilotAnswerQuestions ?? true,
+        copilotWebSearch: copilotWebSearch ?? false,
+        copilotModel: copilotModel ?? "",
         ...(startOnLogin != null && { startOnLogin }),
         ...(dataDirectory != null && { dataDirectory }),
         ...(firstRunCompleted != null && { firstRunCompleted }),
@@ -1429,6 +1459,11 @@ export const useConfigStore = create<ConfigState>((set) => ({
       store.onKeyChange<ContextScopeSetting>("contextScope", (val) => {
         if (val != null) set({ contextScope: normalizeContextScope(val) });
       });
+      store.onKeyChange<boolean>("copilotEnabled", (val) => { if (val != null) set({ copilotEnabled: val }); });
+      store.onKeyChange<number>("copilotIntervalSeconds", (val) => { if (val != null) set({ copilotIntervalSeconds: val }); });
+      store.onKeyChange<boolean>("copilotAnswerQuestions", (val) => { if (val != null) set({ copilotAnswerQuestions: val }); });
+      store.onKeyChange<boolean>("copilotWebSearch", (val) => { if (val != null) set({ copilotWebSearch: val }); });
+      store.onKeyChange<string>("copilotModel", (val) => { if (val != null) set({ copilotModel: val }); });
       store.onKeyChange<boolean>("contextScopeSticky", (val) => {
         if (val != null) set({ contextScopeSticky: val });
       });

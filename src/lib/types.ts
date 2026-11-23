@@ -678,6 +678,29 @@ export interface DetectedQuestion {
   source: Speaker;
 }
 
+// == MEETING COPILOT ==
+export interface CopilotRequest {
+  newLines: string;
+  recentContext: string;
+  notes: string[];
+  covered: string[];
+  question?: string | null;
+  model?: string | null;
+  webSearch: boolean;
+}
+
+export interface CopilotCard {
+  kind: "question" | "insight" | "answer";
+  topic: string;
+  points: string[];
+  files: string[];
+}
+
+export interface CopilotResponse {
+  notes: string[];
+  cards: CopilotCard[];
+}
+
 // == CONFIG TYPES ==
 
 export type ThemeMode = "dark" | "light" | "system";
