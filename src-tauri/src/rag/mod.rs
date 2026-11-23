@@ -11,7 +11,7 @@ pub mod transcript_indexer;
 
 use std::sync::{Arc, Mutex};
 use config::RagConfig;
-use embedder::OllamaEmbedder;
+use embedder::{Embedder, OllamaEmbedder};
 use search::ScoredChunk;
 use transcript_indexer::TranscriptIndexer;
 use crate::db::rag as rag_db;
@@ -107,10 +107,8 @@ impl RagManager {
         file_name: &str,
         app_handle: &AppHandle,
         config: &RagConfig,
-        embedder_url: &str,
+        embedder: &Embedder,
     ) -> Result<usize, String> {
-        let embedder = OllamaEmbedder::new(embedder_url);
-
         // Phase 1: Chunk the text (no DB needed)
         let chunks = chunker::chunk_text(
             text,
@@ -167,9 +165,7 @@ impl RagManager {
             let batch = &chunk_records[batch_start..batch_end];
 
             let texts: Vec<String> = batch.iter().map(|c| c.text.clone()).collect();
-            let embeddings = embedder
-                .embed_documents(texts, &config.embedding_model)
-                .await?;
+            let embeddings = embedder.embed_documents(texts).await?;
 
             for (record, embedding) in batch.iter().zip(embeddings.iter()) {
                 let embedding_bytes = vector_store::f32_vec_to_bytes(embedding);
@@ -241,22 +237,19 @@ impl RagManager {
 
     /// Perform an async search against the RAG index.
     ///
-    /// Creates a temporary OllamaEmbedder for the query embedding, locks the
-    /// database, loads stored embeddings, and dispatches to the appropriate
-    /// search mode (hybrid, semantic, or keyword).
+    /// Embeds the query with `embedder`, locks the database, loads stored
+    /// embeddings, and dispatches to the appropriate search mode (hybrid,
+    /// semantic, or keyword).
     pub async fn search_async(
         db: &Arc<Mutex<DatabaseManager>>,
         query: &str,
         config: &RagConfig,
-        embedder_url: &str,
-        model: &str,
+        embedder: &Embedder,
     ) -> Result<Vec<ScoredChunk>, String> {
-        let embedder = OllamaEmbedder::new(embedder_url);
-
         // Embed the query (needed for semantic and hybrid modes). When the
         // embedding server is unreachable, search by keyword instead of failing.
         let query_embedding = if config.search_mode != "keyword" {
-            match embedder.embed_query(query, model).await {
+            match embedder.embed_query(query).await {
                 Ok(embedding) => Some(embedding),
                 Err(e) => {
                     log::warn!("RAG: couldn't embed the query ({}); searching by keyword", e);
@@ -293,6 +286,30 @@ impl RagManager {
         rag_db::get_index_status(conn)
             .map_err(|e| format!("Failed to get RAG index status: {}", e))
     }
+}
+
+/// The current RAG settings and an embedder for them, with the API key read
+/// fresh from the credential store (Gemini: the Gemini Live keys, else the
+/// Gemini LLM key; Voyage: the "voyage" credential).
+pub fn current(state: &crate::state::AppState) -> Result<(RagConfig, Embedder), String> {
+    let config = state
+        .rag
+        .as_ref()
+        .ok_or("RAG manager not initialized")?
+        .lock()
+        .map_err(|e| e.to_string())?
+        .config()
+        .clone();
+    let get = |name: &str| -> Option<String> {
+        state.credentials.as_ref()?.lock().ok()?.get_key(name).ok().flatten()
+    };
+    let keys = match config.embedding_provider.as_str() {
+        "gemini" => crate::stt::gemini_live::keys_from_store(get),
+        "voyage" => get("voyage").map(|k| k.trim().to_string()).filter(|k| !k.is_empty()).into_iter().collect(),
+        _ => Vec::new(),
+    };
+    let embedder = Embedder::from_config(&config, keys);
+    Ok((config, embedder))
 }
 
 /// Load all embeddings from the database into memory for vector search.

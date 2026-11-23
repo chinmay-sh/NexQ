@@ -46,6 +46,8 @@ const INDEX_AFFECTING_KEYS: (keyof RagConfig)[] = [
   "chunk_overlap",
   "splitting_strategy",
   "embedding_model",
+  "embedding_provider",
+  "embedding_dimensions",
 ];
 
 interface RagState {
@@ -201,7 +203,8 @@ export const useRagStore = create<RagState>((set) => ({
   },
 
   checkOllamaStatus: async () => {
-    if (useRagStore.getState().ragConfig?.search_mode === "keyword") return;
+    const config = useRagStore.getState().ragConfig;
+    if (config?.search_mode === "keyword" || (config && config.embedding_provider !== "ollama")) return;
     set({ isCheckingConnection: true });
     try {
       const status = await testOllamaEmbeddingConnection();
@@ -266,7 +269,8 @@ export const useRagStore = create<RagState>((set) => ({
       showToast(`Model "${model}" pulled successfully`, "success");
       set({ isPullingModel: false, pullProgress: null });
       // Refresh connection status to reflect newly available model
-      if (useRagStore.getState().ragConfig?.search_mode !== "keyword") useRagStore.getState().checkOllamaStatus();
+      const config = useRagStore.getState().ragConfig;
+      if (config?.search_mode !== "keyword" && config?.embedding_provider === "ollama") useRagStore.getState().checkOllamaStatus();
     } catch (e) {
       console.error("[ragStore] Failed to pull model:", e);
       const msg = e instanceof Error ? e.message : String(e);

@@ -209,7 +209,7 @@ NexQ supports loading documents (PDF, TXT, MD, DOCX) as context for AI responses
 
 1. Open Settings > Context
 2. Load documents using the file picker
-3. Enable RAG and configure the embedding model (requires Ollama with an embedding model like `nomic-embed-text`)
+3. Enable RAG and choose Ollama (local), Gemini, or Voyage AI embeddings. Cloud providers need the relevant saved credential.
 4. Documents are automatically chunked, embedded, and indexed
 
 ### Configuration
@@ -231,7 +231,7 @@ The AI Actions panel configures how NexQ's AI assistance behaves during meetings
 
 ### Meeting copilot
 
-Enable **Meeting copilot** in **Settings > AI Actions** to get periodic meeting notes, answers and insights from indexed knowledge-base files. Detected questions can be answered immediately and pinned in the Copilot view; this is separate from Auto-Answer, which continues to behave as configured above. The copilot uses the active LLM provider unless you enter a model override. Choose a check interval of 5–60 seconds; each check is one model call, so shorter intervals cost more. Copilot reads indexed knowledge-base folders and files. Optional web search works only with Gemini and OpenRouter. In the overlay's AI response area, select **Copilot**; return to the existing Ask box and mode buttons with **AI response**.
+Enable **Meeting copilot** in **Settings > AI Actions** to get periodic meeting notes, answers and insights from indexed knowledge-base files. Detected questions can be answered immediately and pinned in the Copilot view; this is separate from Auto-Answer, which continues to behave as configured above. The copilot uses the active LLM provider unless you enter a model override. Choose a check interval of 5–60 seconds; each check is one model call, so shorter intervals cost more. Copilot reads indexed knowledge-base folders and files. With web search enabled, Gemini and OpenRouter use native search; other providers use Tavily if a Tavily API key is saved under Meeting copilot settings. Without that key, those providers do not search the web. Get a key at [tavily.com](https://tavily.com); NexQ stores it securely and never reads it back into the settings UI. In the overlay's AI response area, select **Copilot**; return to the existing Ask box and mode buttons with **AI response**.
 - **Response style** -- adjust the tone, length, and format of AI responses
 - **Context window** -- control how much conversation history is sent to the LLM with each request
 

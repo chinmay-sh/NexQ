@@ -47,11 +47,7 @@ pub async fn rebuild_rag_index(
             .unwrap_or_default();
 
         if !text.is_empty() {
-            // Extract config under brief lock, then drop guard before await
-            let (config, embedder_url) = {
-                let mgr = rag_arc.lock().map_err(|e| e.to_string())?;
-                (mgr.config().clone(), mgr.embedder_url())
-            };
+            let (config, embedder) = rag::current(&state)?;
             RagManager::index_file_async(
                 db_arc,
                 &resource.id,
@@ -59,14 +55,12 @@ pub async fn rebuild_rag_index(
                 &resource.name,
                 &app_handle,
                 &config,
-                &embedder_url,
+                &embedder,
             ).await?;
         }
     }
 
-    if let Some(rag_mgr) = state.rag.as_ref() {
-        rag::folders::sync(db_arc, rag_mgr, &app_handle).await?;
-    }
+    rag::folders::sync(db_arc, || rag::current(&state), &app_handle).await?;
 
     // Emit completion event
     let _ = app_handle.emit("rag_index_progress", serde_json::json!({
@@ -112,10 +106,7 @@ pub async fn rebuild_file_index(
         .unwrap_or_default();
 
     if !text.is_empty() {
-        let (config, embedder_url) = {
-            let mgr = rag_arc.lock().map_err(|e| e.to_string())?;
-            (mgr.config().clone(), mgr.embedder_url())
-        };
+        let (config, embedder) = rag::current(&state)?;
         RagManager::index_file_async(
             db_arc,
             &resource_id,
@@ -123,7 +114,7 @@ pub async fn rebuild_file_index(
             &file_name,
             &app_handle,
             &config,
-            &embedder_url,
+            &embedder,
         ).await?;
     }
 
@@ -179,17 +170,11 @@ pub async fn test_rag_search(
     query: String,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
-    let rag_arc = state.rag.as_ref()
-        .ok_or_else(|| "RAG manager not initialized".to_string())?;
     let db_arc = state.database.as_ref()
         .ok_or_else(|| "Database not initialized".to_string())?;
 
-    let (config, embedder_url, model) = {
-        let mgr = rag_arc.lock().map_err(|e| e.to_string())?;
-        (mgr.config().clone(), mgr.embedder_url(), mgr.embedding_model())
-    };
-
-    let results = RagManager::search_async(db_arc, &query, &config, &embedder_url, &model).await?;
+    let (config, embedder) = rag::current(&state)?;
+    let results = RagManager::search_async(db_arc, &query, &config, &embedder).await?;
 
     serde_json::to_string(&results)
         .map_err(|e| format!("Failed to serialize search results: {}", e))
@@ -362,17 +347,11 @@ pub async fn test_rag_answer(
     let request_id = request_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
     // 1. Search RAG for relevant chunks
-    let rag_arc = state.rag.as_ref()
-        .ok_or_else(|| "RAG manager not initialized".to_string())?;
     let db_arc = state.database.as_ref()
         .ok_or_else(|| "Database not initialized".to_string())?;
 
-    let (config, embedder_url, emb_model) = {
-        let mgr = rag_arc.lock().map_err(|e| e.to_string())?;
-        (mgr.config().clone(), mgr.embedder_url(), mgr.embedding_model())
-    };
-
-    let chunks = RagManager::search_async(db_arc, &query, &config, &embedder_url, &emb_model).await?;
+    let (config, embedder) = rag::current(&state)?;
+    let chunks = RagManager::search_async(db_arc, &query, &config, &embedder).await?;
 
     if chunks.is_empty() {
         return Err("No relevant chunks found in the knowledge base".to_string());

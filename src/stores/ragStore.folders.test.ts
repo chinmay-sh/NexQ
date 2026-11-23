@@ -46,4 +46,13 @@ describe("RAG folders and keyword-mode Ollama gating", () => {
     expect(mocks.testOllamaEmbeddingConnection).not.toHaveBeenCalled();
     expect(mocks.showToast).not.toHaveBeenCalled();
   });
+
+  it.each(["gemini", "voyage"] as const)("does not probe or toast about Ollama for %s embeddings", async (provider) => {
+    useRagStore.setState({ ragConfig: { search_mode: "hybrid", embedding_provider: provider } as never });
+
+    await useRagStore.getState().checkOllamaStatus();
+
+    expect(mocks.testOllamaEmbeddingConnection).not.toHaveBeenCalled();
+    expect(mocks.showToast).not.toHaveBeenCalled();
+  });
 });

@@ -67,7 +67,15 @@ Scans skip hidden directories, common generated/dependency folders (`node_module
 
 ### Keyword search without Ollama
 
-Choose **Keyword (BM25) — no Ollama needed** in Search Mode (or use the **Fastest** preset). Keyword mode indexes and searches with BM25 and does not call Ollama for embeddings. It is suitable for exact names, terms, and phrases. Hybrid and semantic modes use embeddings; they need Ollama for indexing and fall back to keyword results if Ollama is unreachable during search.
+Choose **Keyword (BM25) — no Ollama needed** in Search Mode (or use the **Fastest** preset). Keyword mode indexes and searches with BM25 and does not call any embedding provider. Hybrid and semantic modes can use local Ollama embeddings or cloud Gemini and Voyage AI embeddings.
+
+### Embedding providers
+
+- **Ollama (local)** uses a locally installed model such as `nomic-embed-text`; set the Ollama URL, test the connection, and pull models in Context settings.
+- **Gemini** supports `gemini-embedding-2` (default) and `gemini-embedding-001`, with dimensions 128–3072 (common choices: 256, 512, 768, 1536, 3072). It reuses your Gemini Live credential, or your Gemini LLM credential; no separate embedding key is needed.
+- **Voyage AI** supports `voyage-4-lite` (default, fastest/cheapest), `voyage-4`, and `voyage-4-large`; choose 256, 512, 1024 (default), or 2048 dimensions. Save a Voyage API key in Context settings; it is stored securely and is never shown again.
+
+Switching embedding provider, model, or dimensions marks the existing index stale. Rebuild the index before relying on semantic/hybrid results: vectors from different providers or dimensions cannot be mixed. Keyword mode continues to work without embeddings.
 
 ## Configuration
 

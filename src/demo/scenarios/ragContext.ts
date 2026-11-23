@@ -92,6 +92,7 @@ function makeTokenBudget(): TokenBudget {
 function makeRagConfig(): RagConfig {
   return {
     enabled: true,
+    embedding_provider: 'ollama',
     embedding_model: 'nomic-embed-text',
     ollama_url: 'http://localhost:11434',
     batch_size: 32,

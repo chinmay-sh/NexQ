@@ -16,6 +16,8 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
+use super::config::RagConfig;
+use super::embedder::Embedder;
 use super::file_processor;
 use super::RagManager;
 use crate::db::rag as rag_db;
@@ -228,9 +230,10 @@ fn lock_db(db: &Arc<Mutex<DatabaseManager>>) -> Result<std::sync::MutexGuard<'_,
 
 /// Bring the index in line with the folders: index new and changed files,
 /// drop removed ones. Emits `rag_folders_synced` with the report.
+/// `current` gives the RAG settings and embedder to index with (see `rag::current`).
 pub async fn sync(
     db: &Arc<Mutex<DatabaseManager>>,
-    rag: &Arc<Mutex<RagManager>>,
+    current: impl Fn() -> Result<(RagConfig, Embedder), String>,
     app: &AppHandle,
 ) -> Result<SyncReport, String> {
     if SYNCING.swap(true, Ordering::SeqCst) {
@@ -272,12 +275,9 @@ pub async fn sync(
         rag_db::delete_chunks_by_file(lock_db(db)?.connection(), &file.path)?;
         match text {
             Ok(text) if !text.trim().is_empty() => {
-                let (config, embedder_url) = {
-                    let mgr = rag.lock().map_err(|e| e.to_string())?;
-                    (mgr.config().clone(), mgr.embedder_url())
-                };
+                let (config, embedder) = current()?;
                 let name = Path::new(&file.path).file_name().map_or(file.path.clone(), |n| n.to_string_lossy().to_string());
-                match RagManager::index_file_async(db, &file.path, &text, &name, app, &config, &embedder_url).await {
+                match RagManager::index_file_async(db, &file.path, &text, &name, app, &config, &embedder).await {
                     Ok(_) => report.indexed += 1,
                     Err(e) => {
                         // The chunks are in, so keyword search still finds the file.
@@ -307,10 +307,10 @@ pub async fn sync(
 /// `sync` with the app's database and RAG manager.
 pub async fn sync_app(app: &AppHandle) -> Result<SyncReport, String> {
     let state = app.state::<crate::state::AppState>();
-    let (Some(db), Some(rag)) = (state.database.clone(), state.rag.clone()) else {
+    let Some(db) = state.database.clone() else {
         return Err("Knowledge base not initialized".to_string());
     };
-    sync(&db, &rag, app).await
+    sync(&db, || super::current(&state), app).await
 }
 
 /// Rescan the folders in the background, for as long as the app runs.

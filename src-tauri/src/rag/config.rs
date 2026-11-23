@@ -6,7 +6,9 @@ use serde::{Deserialize, Serialize};
 pub struct RagConfig {
     /// Whether the RAG pipeline is enabled.
     pub enabled: bool,
-    /// Ollama embedding model name.
+    /// Where embeddings come from: "ollama" (default), "gemini" or "voyage".
+    pub embedding_provider: String,
+    /// Embedding model name (for the chosen provider).
     pub embedding_model: String,
     /// Ollama server base URL.
     pub ollama_url: String,
@@ -36,6 +38,7 @@ impl Default for RagConfig {
     fn default() -> Self {
         Self {
             enabled: false,
+            embedding_provider: "ollama".to_string(),
             embedding_model: "nomic-embed-text".to_string(),
             ollama_url: "http://localhost:11434".to_string(),
             batch_size: 32,

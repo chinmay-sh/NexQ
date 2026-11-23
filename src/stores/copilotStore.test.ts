@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { selectCopilotLines, useCopilotStore } from "./copilotStore";
 
-const card = { kind: "insight" as const, topic: "Budget", points: ["Review next quarter"], files: [] };
+const card = { kind: "insight" as const, topic: "Budget", points: ["Review next quarter"], files: [], links: [] };
 beforeEach(() => useCopilotStore.getState().reset());
 
 describe("copilot store", () => {

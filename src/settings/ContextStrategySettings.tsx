@@ -8,7 +8,11 @@ import {
   deleteGeminiContextCache,
   getGeminiCacheStatus,
   type GeminiCacheInfo,
+  hasApiKey,
+  storeApiKey,
+  deleteApiKey,
 } from "../lib/ipc";
+import { open } from "@tauri-apps/plugin-shell";
 import { showToast } from "../stores/toastStore";
 import {
   Database,
@@ -33,7 +37,7 @@ import {
 } from "lucide-react";
 
 // ─── Preset Definitions ───────────────────────────────────────────────────────
-const PRESETS = [
+export const PRESETS = [
   {
     id: "fastest",
     label: "Fastest",
@@ -42,10 +46,12 @@ const PRESETS = [
     description: "Keyword (BM25) — no Ollama needed",
     config: {
       search_mode: "keyword",
+      embedding_provider: "ollama",
       top_k: 3,
       chunk_size: 256,
       chunk_overlap: 16,
       embedding_model: "all-minilm",
+      embedding_dimensions: 384,
       semantic_weight: 0.3,
       batch_size: 32,
       similarity_threshold: 0.1,
@@ -59,10 +65,12 @@ const PRESETS = [
     description: "Hybrid search with small embedding model",
     config: {
       search_mode: "hybrid",
+      embedding_provider: "ollama",
       top_k: 3,
       chunk_size: 512,
       chunk_overlap: 64,
       embedding_model: "all-minilm",
+      embedding_dimensions: 384,
       semantic_weight: 0.7,
       batch_size: 32,
       similarity_threshold: 0.2,
@@ -76,10 +84,12 @@ const PRESETS = [
     description: "Best balance of speed and accuracy",
     config: {
       search_mode: "hybrid",
+      embedding_provider: "ollama",
       top_k: 5,
       chunk_size: 512,
       chunk_overlap: 64,
       embedding_model: "nomic-embed-text",
+      embedding_dimensions: 768,
       semantic_weight: 0.7,
       batch_size: 32,
       similarity_threshold: 0.3,
@@ -93,10 +103,12 @@ const PRESETS = [
     description: "More results, finer chunks, better coverage",
     config: {
       search_mode: "hybrid",
+      embedding_provider: "ollama",
       top_k: 10,
       chunk_size: 256,
       chunk_overlap: 64,
       embedding_model: "nomic-embed-text",
+      embedding_dimensions: 768,
       semantic_weight: 0.7,
       batch_size: 32,
       similarity_threshold: 0.2,
@@ -110,10 +122,12 @@ const PRESETS = [
     description: "High-dimensional model, fine chunks, maximum context",
     config: {
       search_mode: "hybrid",
+      embedding_provider: "ollama",
       top_k: 15,
       chunk_size: 256,
       chunk_overlap: 128,
       embedding_model: "mxbai-embed-large",
+      embedding_dimensions: 1024,
       semantic_weight: 0.7,
       batch_size: 32,
       similarity_threshold: 0.2,
@@ -123,7 +137,7 @@ const PRESETS = [
 
 const PRESET_KEYS: (keyof RagConfig)[] = [
   "search_mode", "top_k", "chunk_size", "chunk_overlap",
-  "embedding_model", "semantic_weight", "batch_size", "similarity_threshold",
+  "embedding_provider", "embedding_model", "embedding_dimensions", "semantic_weight", "batch_size", "similarity_threshold",
 ];
 
 function getActivePresetId(config: RagConfig): string | null {
@@ -261,8 +275,9 @@ For 60 chunks at batch=32: ~2 Ollama calls vs ~8 calls at batch=8.`,
 };
 
 // ─── Default Config ───────────────────────────────────────────────────────────
-const DEFAULT_RAG_CONFIG: RagConfig = {
+export const DEFAULT_RAG_CONFIG: RagConfig = {
   enabled: true,
+  embedding_provider: "ollama",
   embedding_model: "nomic-embed-text",
   ollama_url: "http://localhost:11434",
   batch_size: 32,
@@ -288,6 +303,22 @@ const EMBEDDING_MODELS = [
   { id: "mxbai-embed-large", label: "mxbai-embed-large (1024d)", dims: 1024 },
   { id: "all-minilm", label: "all-minilm (384d)", dims: 384 },
 ];
+
+const PROVIDER_DEFAULTS = {
+  ollama: { model: "nomic-embed-text", dimensions: 768 },
+  gemini: { model: "gemini-embedding-2", dimensions: 768 },
+  voyage: { model: "voyage-4-lite", dimensions: 1024 },
+} as const;
+
+export function getEmbeddingProviderDefaults(provider: RagConfig["embedding_provider"]) {
+  return PROVIDER_DEFAULTS[provider];
+}
+
+export function getEmbeddingModelDimensions(provider: RagConfig["embedding_provider"], model: string): number {
+  if (provider === "gemini") return 768;
+  if (provider === "voyage") return 1024;
+  return MODEL_DIMS[model] ?? 768;
+}
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -383,6 +414,9 @@ export function ContextStrategySettings() {
   const [confirmClear, setConfirmClear] = useState(false);
   const [confirmRebuild, setConfirmRebuild] = useState(false);
   const [localConfig, setLocalConfig] = useState<RagConfig>(DEFAULT_RAG_CONFIG);
+  const [geminiKeyAvailable, setGeminiKeyAvailable] = useState(false);
+  const [voyageKeyAvailable, setVoyageKeyAvailable] = useState(false);
+  const [voyageKeyInput, setVoyageKeyInput] = useState("");
   const keywordMode = localConfig.search_mode === "keyword";
   const [openHelp, setOpenHelp] = useState<string | null>(null);
 
@@ -392,7 +426,10 @@ export function ContextStrategySettings() {
     refreshIndexStatus();
     void (async () => {
       await loadRagConfig();
-      if (useRagStore.getState().ragConfig?.search_mode !== "keyword") checkOllamaStatus();
+      const loaded = useRagStore.getState().ragConfig;
+      if (loaded?.search_mode !== "keyword" && loaded?.embedding_provider === "ollama") checkOllamaStatus();
+      void Promise.all([hasApiKey("gemini_live"), hasApiKey("gemini")]).then(([live, gemini]) => setGeminiKeyAvailable(live || gemini)).catch(() => setGeminiKeyAvailable(false));
+      void hasApiKey("voyage").then(setVoyageKeyAvailable).catch(() => setVoyageKeyAvailable(false));
     })();
   }, [loadRagConfig, refreshIndexStatus, checkOllamaStatus]);
 
@@ -432,9 +469,12 @@ export function ContextStrategySettings() {
   const handleSelectChange = useCallback(
     <K extends keyof RagConfig>(key: K, value: RagConfig[K]) => {
       const extraFields: Partial<RagConfig> = {};
-      if (key === "embedding_model") {
-        const dims = MODEL_DIMS[value as string] ?? 768;
-        extraFields.embedding_dimensions = dims;
+      if (key === "embedding_provider") {
+        const defaults = getEmbeddingProviderDefaults(value as RagConfig["embedding_provider"]);
+        extraFields.embedding_model = defaults.model;
+        extraFields.embedding_dimensions = defaults.dimensions;
+      } else if (key === "embedding_model") {
+        extraFields.embedding_dimensions = getEmbeddingModelDimensions(localConfig.embedding_provider, value as string);
       }
       const updated = { ...localConfig, [key]: value, ...extraFields, include_transcript: false };
       setLocalConfig(updated);
@@ -589,7 +629,14 @@ export function ContextStrategySettings() {
           </div>
 
           {/* ── Connection ── */}
-          {!keywordMode && <div className="rounded-xl border border-border/30 bg-card/50 p-5">
+          <div className="rounded-xl border border-border/30 bg-card/50 p-5">
+            <div className={`mb-4 ${keywordMode ? "opacity-50" : ""}`}>
+              <label className="mb-1.5 block text-xs font-medium text-foreground">Embeddings</label>
+              <select disabled={keywordMode} value={localConfig.embedding_provider} onChange={(e) => handleSelectChange("embedding_provider", e.target.value as RagConfig["embedding_provider"])} className="w-full rounded-lg border border-border/50 bg-background px-3.5 py-2.5 text-sm text-foreground">
+                <option value="ollama">Ollama (local)</option><option value="gemini">Gemini</option><option value="voyage">Voyage AI</option>
+              </select>
+            </div>
+          {!keywordMode && localConfig.embedding_provider === "ollama" && <>
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-semibold text-primary/80">Connection</h3>
             </div>
@@ -701,7 +748,17 @@ export function ContextStrategySettings() {
                 </div>
               )}
             </div>
+          </>}
+          {!keywordMode && localConfig.embedding_provider !== "ollama" && <div className="space-y-3">
+            <div><label className="mb-1.5 block text-xs font-medium text-foreground">Embedding Model</label>
+              <select value={localConfig.embedding_model} onChange={(e) => handleSelectChange("embedding_model", e.target.value)} className="w-full rounded-lg border border-border/50 bg-background px-3.5 py-2.5 text-sm text-foreground">
+                {(localConfig.embedding_provider === "gemini" ? [{id:"gemini-embedding-2",label:"gemini-embedding-2"},{id:"gemini-embedding-001",label:"gemini-embedding-001"}] : [{id:"voyage-4-lite",label:"voyage-4-lite (fastest / cheapest)"},{id:"voyage-4",label:"voyage-4"},{id:"voyage-4-large",label:"voyage-4-large"}]).map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+              </select>
+            </div>
+            <div><label className="mb-1.5 block text-xs font-medium text-foreground">Embedding Dimensions</label><select value={localConfig.embedding_dimensions} onChange={(e) => handleSelectChange("embedding_dimensions", Number(e.target.value))} className="w-full rounded-lg border border-border/50 bg-background px-3.5 py-2.5 text-sm text-foreground">{(localConfig.embedding_provider === "gemini" ? [256,512,768,1536,3072] : [256,512,1024,2048]).map(n => <option key={n} value={n}>{n}</option>)}</select></div>
+            {localConfig.embedding_provider === "gemini" ? <p className="text-xs text-muted-foreground">Uses your Gemini Live key or Gemini LLM key.{!geminiKeyAvailable && <span className="ml-1 text-amber-500">No Gemini credential found.</span>}</p> : <div className="space-y-2"><p className="text-xs text-muted-foreground">Save a Voyage API key to use cloud embeddings. Get one at <button type="button" onClick={() => void open("https://voyageai.com").catch(() => {})} className="underline">voyageai.com</button>.</p>{voyageKeyAvailable ? <div className="flex items-center gap-2 text-xs"><span>Voyage API key saved</span><button type="button" onClick={async()=>{await deleteApiKey("voyage");setVoyageKeyAvailable(false);}} className="underline">Clear</button></div> : <div className="flex gap-2"><input type="password" value={voyageKeyInput} onChange={e=>setVoyageKeyInput(e.target.value)} aria-label="Voyage API key" className="min-w-0 flex-1 rounded-lg border border-border/50 bg-background px-3 py-2 text-sm"/><button type="button" disabled={!voyageKeyInput.trim()} onClick={async()=>{await storeApiKey("voyage",voyageKeyInput.trim());setVoyageKeyInput("");setVoyageKeyAvailable(true);}} className="rounded-lg border px-3 text-xs disabled:opacity-50">Save key</button></div>}</div>}
           </div>}
+          </div>
 
           {/* ── Search Settings ── */}
           <div className="rounded-xl border border-border/30 bg-card/50 p-5">
@@ -957,6 +1014,7 @@ export function ContextStrategySettings() {
                   </div>
                 </div>
 
+                {localConfig.embedding_provider === "ollama" && !keywordMode && <>
                 {/* Ollama URL */}
                 <div>
                   <label className="mb-1.5 block text-xs font-medium text-foreground">
@@ -971,6 +1029,7 @@ export function ContextStrategySettings() {
                     className="w-full rounded-lg border border-border/50 bg-background px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/50 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20"
                   />
                 </div>
+                </>}
 
                 {/* Batch Size */}
                 <div>

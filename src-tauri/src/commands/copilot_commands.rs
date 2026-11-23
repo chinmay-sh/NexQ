@@ -12,6 +12,10 @@ use crate::state::AppState;
 
 /// Most knowledge-base passages offered per check.
 const MAX_PASSAGES: usize = 6;
+/// Web results added for a question or a requested search.
+const MAX_WEB_RESULTS: usize = 5;
+/// Credential holding the Tavily API key.
+pub const TAVILY_KEY: &str = "tavily";
 /// Transcript text used as the knowledge-base query.
 const QUERY_CHARS: usize = 600;
 
@@ -43,14 +47,37 @@ pub async fn copilot_tick(app: AppHandle, request: CopilotRequest) -> Result<Cop
         }
     };
 
-    let (system, user) = copilot::build_messages(&request, &passages);
-    let messages = vec![
-        LLMMessage { role: "system".into(), content: system },
-        LLMMessage { role: "user".into(), content: user },
-    ];
-    let (provider, model) = copilot_provider(&state, request.model.as_deref())?;
-    let reply = complete_silently(&app, provider, &model, messages, request.web_search).await?;
-    let response = copilot::parse_response(&reply, &request, &passages)?;
+    let (provider, model, native_search) = copilot_provider(&state, request.model.as_deref())?;
+    // Web: the provider's own search (Gemini, OpenRouter), else Tavily when a key is saved.
+    let tavily = (request.web_search && !native_search).then(|| credential(&state, TAVILY_KEY)).flatten();
+    let mut passages = passages;
+    if let (Some(key), Some(q)) = (tavily.as_deref(), request.question()) {
+        passages.extend(web_passages(key, q).await);
+    }
+
+    let ask = |request: &CopilotRequest, passages: &[Passage], offer_search: bool| {
+        let (system, user) = copilot::build_messages(request, passages, offer_search);
+        vec![LLMMessage { role: "system".into(), content: system }, LLMMessage { role: "user".into(), content: user }]
+    };
+    let native = request.web_search && native_search;
+    let reply = complete_silently(&app, provider.clone(), &model, ask(&request, &passages, tavily.is_some()), native).await?;
+    let mut response = copilot::parse_response(&reply, &request, &passages)?;
+
+    // The model asked for a web search: answer it as one more card.
+    if let (Some(key), Some(search)) = (tavily.as_deref(), response.search.take()) {
+        let web = web_passages(key, &search).await;
+        if !web.is_empty() {
+            let follow = CopilotRequest { question: Some(search.clone()), ..request.clone() };
+            let all: Vec<Passage> = passages.iter().cloned().chain(web).collect();
+            match complete_silently(&app, provider, &model, ask(&follow, &all, false), false).await {
+                Ok(reply) => match copilot::parse_response(&reply, &follow, &all) {
+                    Ok(found) => response.cards.extend(found.cards.into_iter().map(|c| copilot::CopilotCard { kind: "answer".into(), ..c })),
+                    Err(e) => log::warn!("Copilot: web follow-up unreadable: {}", e),
+                },
+                Err(e) => log::warn!("Copilot: web follow-up failed: {}", e),
+            }
+        }
+    }
     log::info!(
         "Copilot: {} note(s), {} card(s) from {} passage(s){}",
         response.notes.len(),
@@ -59,6 +86,39 @@ pub async fn copilot_tick(app: AppHandle, request: CopilotRequest) -> Result<Cop
         if request.question().is_some() { " (question)" } else { "" }
     );
     Ok(response)
+}
+
+fn credential(state: &AppState, name: &str) -> Option<String> {
+    let creds = state.credentials.as_ref()?.lock().ok()?;
+    creds.get_key(name).ok().flatten().map(|k| k.trim().to_string()).filter(|k| !k.is_empty())
+}
+
+/// Tavily results for `query` as passages (none on any failure, which is logged).
+async fn web_passages(key: &str, query: &str) -> Vec<Passage> {
+    match tavily_search(key, query).await {
+        Ok(found) => found,
+        Err(e) => {
+            log::warn!("Copilot: Tavily search failed: {}", e);
+            Vec::new()
+        }
+    }
+}
+
+async fn tavily_search(key: &str, query: &str) -> Result<Vec<Passage>, String> {
+    let response = reqwest::Client::new()
+        .post("https://api.tavily.com/search")
+        .bearer_auth(key)
+        .json(&serde_json::json!({ "query": query, "max_results": MAX_WEB_RESULTS, "search_depth": "basic" }))
+        .timeout(std::time::Duration::from_secs(30))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    let status = response.status().as_u16();
+    let body: serde_json::Value = response.json().await.map_err(|e| e.to_string())?;
+    if status != 200 {
+        return Err(format!("HTTP {}: {}", status, body));
+    }
+    Ok(copilot::tavily_passages(&body))
 }
 
 fn tail(text: &str, n: usize) -> String {
@@ -70,10 +130,11 @@ fn tail(text: &str, n: usize) -> String {
 /// the active provider's settings, so copilot checks don't hold the shared
 /// provider while the user waits on an answer; CLI agents (which manage their
 /// own sessions) use the shared one.
+/// Also says whether the provider searches the web itself (Gemini, OpenRouter).
 fn copilot_provider(
     state: &AppState,
     model_override: Option<&str>,
-) -> Result<(Arc<TokioMutex<Box<dyn LLMProvider>>>, String), String> {
+) -> Result<(Arc<TokioMutex<Box<dyn LLMProvider>>>, String, bool), String> {
     let llm = state.llm.as_ref().ok_or("LLM router not initialized")?;
     let router = llm.lock().map_err(|_| "LLM lock poisoned")?;
     let model = model_override
@@ -92,7 +153,11 @@ fn copilot_provider(
         Some(p) => Arc::new(TokioMutex::new(p)),
         None => router.get_provider().map_err(|e| format!("LLM not configured: {}", e))?,
     };
-    Ok((provider, model))
+    let native_search = matches!(
+        router.active_provider_type(),
+        Some(crate::llm::ProviderType::Gemini | crate::llm::ProviderType::Openrouter)
+    );
+    Ok((provider, model, native_search))
 }
 
 /// Run `messages` without any `llm_stream_*` events and return the full reply.

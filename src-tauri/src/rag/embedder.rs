@@ -329,3 +329,219 @@ impl OllamaEmbedder {
         Ok(())
     }
 }
+
+// ── Cloud embedders ──────────────────────────────────────────────────────────
+
+const GEMINI_EMBED_URL: &str = "https://generativelanguage.googleapis.com/v1beta/models";
+const VOYAGE_EMBED_URL: &str = "https://api.voyageai.com/v1/embeddings";
+pub const DEFAULT_GEMINI_EMBEDDING_MODEL: &str = "gemini-embedding-2";
+pub const DEFAULT_VOYAGE_EMBEDDING_MODEL: &str = "voyage-4-lite";
+/// Dimensions Voyage can return.
+const VOYAGE_DIMENSIONS: [usize; 4] = [256, 512, 1024, 2048];
+/// Cloud models take long inputs; this keeps a request well inside their limits.
+const CLOUD_CHAR_LIMIT: usize = 24_000;
+
+/// The embedding service chosen in RagConfig (`embedding_provider`).
+pub enum Embedder {
+    Ollama { client: OllamaEmbedder, model: String },
+    /// Several keys: the next one is tried when one is rate limited.
+    Gemini { client: Client, keys: Vec<String>, model: String, dimensions: usize },
+    Voyage { client: Client, key: Option<String>, model: String, dimensions: usize },
+}
+
+impl Embedder {
+    /// The embedder for `config`. `keys` are the API keys for its provider
+    /// (Gemini: in order of preference; Voyage: the first is used). A missing
+    /// key is reported when embedding, so keyword search still works.
+    pub fn from_config(config: &super::config::RagConfig, keys: Vec<String>) -> Self {
+        let model = config.embedding_model.trim();
+        match config.embedding_provider.as_str() {
+            "gemini" => {
+                let model = if model.starts_with("gemini") || model.starts_with("text-embedding") { model } else { DEFAULT_GEMINI_EMBEDDING_MODEL };
+                Embedder::Gemini {
+                    client: Client::new(),
+                    keys,
+                    model: model.to_string(),
+                    dimensions: config.embedding_dimensions.clamp(128, 3072),
+                }
+            }
+            "voyage" => {
+                let key = keys.into_iter().next();
+                let model = if model.starts_with("voyage") { model } else { DEFAULT_VOYAGE_EMBEDDING_MODEL };
+                let dimensions = if VOYAGE_DIMENSIONS.contains(&config.embedding_dimensions) { config.embedding_dimensions } else { 1024 };
+                Embedder::Voyage { client: Client::new(), key, model: model.to_string(), dimensions }
+            }
+            _ => Embedder::Ollama { client: OllamaEmbedder::new(&config.ollama_url), model: model.to_string() },
+        }
+    }
+
+    pub async fn embed_documents(&self, texts: Vec<String>) -> Result<Vec<Vec<f32>>, String> {
+        match self {
+            Embedder::Ollama { client, model } => client.embed_documents(texts, model).await,
+            Embedder::Gemini { .. } => self.gemini(texts, "RETRIEVAL_DOCUMENT").await,
+            Embedder::Voyage { .. } => self.voyage(texts, "document").await,
+        }
+    }
+
+    pub async fn embed_query(&self, text: &str) -> Result<Vec<f32>, String> {
+        let one = match self {
+            Embedder::Ollama { client, model } => return client.embed_query(text, model).await,
+            Embedder::Gemini { .. } => self.gemini(vec![text.to_string()], "RETRIEVAL_QUERY").await?,
+            Embedder::Voyage { .. } => self.voyage(vec![text.to_string()], "query").await?,
+        };
+        one.into_iter().next().ok_or_else(|| "No embedding returned for query".to_string())
+    }
+
+    async fn gemini(&self, texts: Vec<String>, task: &str) -> Result<Vec<Vec<f32>>, String> {
+        let Embedder::Gemini { client, keys, model, dimensions } = self else { unreachable!() };
+        let requests: Vec<serde_json::Value> = texts
+            .iter()
+            .map(|t| serde_json::json!({
+                "model": format!("models/{}", model),
+                "content": { "parts": [{ "text": truncate_text(t, CLOUD_CHAR_LIMIT) }] },
+                "taskType": task,
+                "outputDimensionality": dimensions,
+            }))
+            .collect();
+        let body = serde_json::json!({ "requests": requests });
+        let url = format!("{}/{}:batchEmbedContents", GEMINI_EMBED_URL, model);
+        let mut last = "Gemini embeddings need a Gemini API key (AI Providers or Gemini Live)".to_string();
+        for key in keys {
+            let response = client
+                .post(&url)
+                .header("x-goog-api-key", key)
+                .json(&body)
+                .timeout(Duration::from_secs(120))
+                .send()
+                .await
+                .map_err(|e| format!("Gemini embed request failed: {}", e))?;
+            let status = response.status().as_u16();
+            let text = response.text().await.unwrap_or_default();
+            if status == 429 {
+                last = format!("Gemini embeddings rate limited: {}", text.chars().take(200).collect::<String>());
+                continue;
+            }
+            if status != 200 {
+                return Err(format!("Gemini embed returned status {}: {}", status, text.chars().take(300).collect::<String>()));
+            }
+            return parse_gemini_embeddings(&text, texts.len());
+        }
+        Err(last)
+    }
+
+    async fn voyage(&self, texts: Vec<String>, input_type: &str) -> Result<Vec<Vec<f32>>, String> {
+        let Embedder::Voyage { client, key, model, dimensions } = self else { unreachable!() };
+        let key = key.as_deref().ok_or("Voyage embeddings need a Voyage API key (Settings → Context)")?;
+        let input: Vec<&str> = texts.iter().map(|t| truncate_text(t, CLOUD_CHAR_LIMIT)).collect();
+        let response = client
+            .post(VOYAGE_EMBED_URL)
+            .bearer_auth(key)
+            .json(&serde_json::json!({ "input": input, "model": model, "input_type": input_type, "output_dimension": dimensions }))
+            .timeout(Duration::from_secs(120))
+            .send()
+            .await
+            .map_err(|e| format!("Voyage embed request failed: {}", e))?;
+        let status = response.status().as_u16();
+        let text = response.text().await.unwrap_or_default();
+        if status != 200 {
+            return Err(format!("Voyage embed returned status {}: {}", status, text.chars().take(300).collect::<String>()));
+        }
+        parse_voyage_embeddings(&text, texts.len())
+    }
+}
+
+fn parse_gemini_embeddings(body: &str, expected: usize) -> Result<Vec<Vec<f32>>, String> {
+    #[derive(Deserialize)]
+    struct Values {
+        values: Vec<f32>,
+    }
+    #[derive(Deserialize)]
+    struct Batch {
+        embeddings: Vec<Values>,
+    }
+    let batch: Batch = serde_json::from_str(body).map_err(|e| format!("Unreadable Gemini embeddings: {}", e))?;
+    let out: Vec<Vec<f32>> = batch.embeddings.into_iter().map(|e| e.values).collect();
+    if out.len() != expected {
+        return Err(format!("Gemini returned {} embeddings for {} texts", out.len(), expected));
+    }
+    Ok(out)
+}
+
+fn parse_voyage_embeddings(body: &str, expected: usize) -> Result<Vec<Vec<f32>>, String> {
+    #[derive(Deserialize)]
+    struct Item {
+        embedding: Vec<f32>,
+        index: usize,
+    }
+    #[derive(Deserialize)]
+    struct List {
+        data: Vec<Item>,
+    }
+    let mut list: List = serde_json::from_str(body).map_err(|e| format!("Unreadable Voyage embeddings: {}", e))?;
+    list.data.sort_by_key(|i| i.index);
+    if list.data.len() != expected {
+        return Err(format!("Voyage returned {} embeddings for {} texts", list.data.len(), expected));
+    }
+    Ok(list.data.into_iter().map(|i| i.embedding).collect())
+}
+
+#[cfg(test)]
+mod cloud_tests {
+    use super::*;
+    use crate::rag::config::RagConfig;
+
+    #[test]
+    fn provider_choice_and_defaults() {
+        let mut c = RagConfig::default();
+        assert!(matches!(Embedder::from_config(&c, vec![]), Embedder::Ollama { .. }));
+        c.embedding_provider = "gemini".into();
+        match Embedder::from_config(&c, vec!["k".into()]) {
+            // An Ollama model name falls back to the Gemini default.
+            Embedder::Gemini { model, dimensions, .. } => assert_eq!((model.as_str(), dimensions), ("gemini-embedding-2", 768)),
+            _ => panic!("expected Gemini"),
+        }
+        c.embedding_provider = "voyage".into();
+        c.embedding_model = "voyage-4".into();
+        match Embedder::from_config(&c, vec!["v".into()]) {
+            // 768 is not a size Voyage offers.
+            Embedder::Voyage { model, dimensions, .. } => assert_eq!((model.as_str(), dimensions), ("voyage-4", 1024)),
+            _ => panic!("expected Voyage"),
+        }
+    }
+
+    #[tokio::test]
+    async fn a_missing_key_fails_when_embedding() {
+        let c = RagConfig { embedding_provider: "voyage".into(), ..Default::default() };
+        let err = Embedder::from_config(&c, vec![]).embed_query("x").await.unwrap_err();
+        assert!(err.contains("Voyage API key"), "{err}");
+        let c = RagConfig { embedding_provider: "gemini".into(), ..Default::default() };
+        let err = Embedder::from_config(&c, vec![]).embed_query("x").await.unwrap_err();
+        assert!(err.contains("Gemini API key"), "{err}");
+    }
+
+    #[test]
+    fn parses_responses_in_input_order() {
+        let g = parse_gemini_embeddings(r#"{"embeddings":[{"values":[1.0,2.0]},{"values":[3.0]}]}"#, 2).unwrap();
+        assert_eq!(g, vec![vec![1.0, 2.0], vec![3.0]]);
+        assert!(parse_gemini_embeddings(r#"{"embeddings":[]}"#, 1).is_err());
+        let v = parse_voyage_embeddings(r#"{"data":[{"embedding":[2.0],"index":1},{"embedding":[1.0],"index":0}],"model":"voyage-4-lite"}"#, 2).unwrap();
+        assert_eq!(v, vec![vec![1.0], vec![2.0]]);
+    }
+
+    /// Live: GEMINI_KEY set. Run with `--ignored`.
+    #[tokio::test]
+    #[ignore]
+    async fn live_gemini_embeddings_rank_the_right_document() {
+        let c = RagConfig { embedding_provider: "gemini".into(), ..Default::default() };
+        let e = Embedder::from_config(&c, vec![std::env::var("GEMINI_KEY").unwrap()]);
+        let docs = e
+            .embed_documents(vec!["Acme Corp was quoted 3900 per month for 40 seats.".into(), "The Falcon launch moved to April.".into()])
+            .await
+            .unwrap();
+        let q = e.embed_query("how much did we charge that customer last year?").await.unwrap();
+        let s: Vec<f32> = docs.iter().map(|d| crate::rag::vector_store::cosine_similarity(&q, d)).collect();
+        println!("similarities {:?}", s);
+        assert_eq!(docs[0].len(), 768);
+        assert!(s[0] > s[1]);
+    }
+}

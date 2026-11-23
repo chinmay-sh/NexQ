@@ -5,6 +5,11 @@
 //! files it used. A detected or typed question is answered at once as a
 //! question card.
 //!
+//! Web: Gemini and OpenRouter search natively. With other models and a
+//! Tavily key, a question is answered with Tavily results among the passages,
+//! and a timer check may ask for one search ("search"), answered by a
+//! follow-up question call.
+//!
 //! This module is the prompt and the parsing; `commands::copilot_commands`
 //! adds the knowledge-base passages and calls the model.
 
@@ -44,12 +49,16 @@ impl CopilotRequest {
     }
 }
 
-/// A knowledge-base passage offered to the model.
+/// A passage offered to the model: from the knowledge base or the web.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Passage {
-    /// File path (folder files) or file name (uploaded files).
+    /// File path (folder files), file name (uploaded files) or web page URL.
     pub source: String,
     pub text: String,
+}
+
+fn is_url(source: &str) -> bool {
+    source.starts_with("https://") || source.starts_with("http://")
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -61,6 +70,8 @@ pub struct CopilotCard {
     pub points: Vec<String>,
     /// Files the card is based on.
     pub files: Vec<String>,
+    /// Web pages the card is based on.
+    pub links: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, PartialEq)]
@@ -68,6 +79,9 @@ pub struct CopilotCard {
 pub struct CopilotResponse {
     pub notes: Vec<String>,
     pub cards: Vec<CopilotCard>,
+    /// A web search the model asked for (only when offered).
+    #[serde(skip)]
+    pub search: Option<String>,
 }
 
 const SYSTEM: &str = r#"You are NexQ's meeting copilot, silently following a live meeting. The transcript comes from speech recognition, so expect misheard words and a mix of Hindi and English; "You" is the user, "Them" is everyone else.
@@ -80,6 +94,8 @@ notes: everything in the NEW LINES that belongs in meeting notes: requests, prop
 cards: help for what is being discussed right now: answers to questions raised, facts the participants are unsure about, and relevant insights from the user's files under PASSAGES. Each card has a 3 to 8 word topic, 2 to 4 short points, and "files": the ids of the passages it uses ([] if none). Prefer the user's files to general knowledge, never invent facts about the user's own work, and say when general knowledge may be out of date. No card for a topic under ALREADY COVERED unless something new was asked about it. Small talk and scheduling get no card. [] when nothing is worth a card.
 
 Write notes and cards in English."#;
+
+const SEARCH_RULE: &str = "\n\nYou cannot browse, but when the participants need a current public fact that neither the passages nor your knowledge cover (recent news, prices, releases), add \"search\": \"<a short web search query>\" to the JSON instead of guessing. At most one search; omit it otherwise.";
 
 const QUESTION_RULE: &str = "\n\nA QUESTION is given: \"cards\" must hold exactly one card that answers it, using the transcript as context. Notes may be [].";
 
@@ -96,11 +112,14 @@ fn last<'a>(items: &'a [String], n: usize) -> &'a [String] {
     &items[items.len().saturating_sub(n)..]
 }
 
-/// The system prompt and the user message for one check.
-pub fn build_messages(req: &CopilotRequest, passages: &[Passage]) -> (String, String) {
+/// The system prompt and the user message for one check. `offer_search`
+/// lets the model ask for a web search (timer checks with Tavily).
+pub fn build_messages(req: &CopilotRequest, passages: &[Passage], offer_search: bool) -> (String, String) {
     let mut system = SYSTEM.to_string();
     if req.question().is_some() {
         system.push_str(QUESTION_RULE);
+    } else if offer_search {
+        system.push_str(SEARCH_RULE);
     }
     let mut user = String::new();
     let section = |user: &mut String, title: &str, body: &str| {
@@ -136,6 +155,7 @@ fn tail_start(text: &str, max_chars: usize) -> &str {
 struct RawResponse {
     notes: Vec<serde_json::Value>,
     cards: Vec<RawCard>,
+    search: Option<serde_json::Value>,
 }
 
 #[derive(Deserialize, Default)]
@@ -192,22 +212,42 @@ pub fn parse_response(reply: &str, req: &CopilotRequest, passages: &[Passage]) -
             if points.is_empty() {
                 return None;
             }
-            let mut files: Vec<String> = Vec::new();
+            let (mut files, mut links): (Vec<String>, Vec<String>) = (Vec::new(), Vec::new());
             for id in c.files.iter().filter_map(text_of) {
                 let index = id.trim_start_matches(['F', 'f', '[']).trim_end_matches(']').parse::<usize>().ok();
                 if let Some(p) = index.and_then(|i| i.checked_sub(1)).and_then(|i| passages.get(i)) {
-                    if !files.contains(&p.source) {
-                        files.push(p.source.clone());
+                    let list = if is_url(&p.source) { &mut links } else { &mut files };
+                    if !list.contains(&p.source) {
+                        list.push(p.source.clone());
                     }
                 }
             }
             let kind = if question { "question" } else if files.is_empty() { "answer" } else { "insight" };
             let topic = c.topic.trim().to_string();
-            Some(CopilotCard { kind: kind.into(), topic: if topic.is_empty() { "Answer".into() } else { topic }, points, files })
+            Some(CopilotCard { kind: kind.into(), topic: if topic.is_empty() { "Answer".into() } else { topic }, points, files, links })
         })
         .take(if question { 1 } else { MAX_CARDS_PER_TICK })
         .collect();
-    Ok(CopilotResponse { notes, cards })
+    let search = if question { None } else { raw.search.as_ref().and_then(text_of) };
+    Ok(CopilotResponse { notes, cards, search })
+}
+
+/// Passages from a Tavily search response (`results[].url/content`).
+pub fn tavily_passages(body: &serde_json::Value) -> Vec<Passage> {
+    body["results"]
+        .as_array()
+        .map(|results| {
+            results
+                .iter()
+                .filter_map(|r| {
+                    let url = r["url"].as_str()?.to_string();
+                    let title = r["title"].as_str().unwrap_or("");
+                    let content = r["content"].as_str().unwrap_or("").trim();
+                    (!content.is_empty() && is_url(&url)).then(|| Passage { source: url, text: format!("{}\n{}", title, content).trim().to_string() })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -233,8 +273,10 @@ mod tests {
 
     #[test]
     fn messages_carry_every_section_in_order() {
-        let (system, user) = build_messages(&req(), &passages());
+        let (system, user) = build_messages(&req(), &passages(), false);
         assert!(!system.contains("A QUESTION is given"));
+        assert!(!system.contains("\"search\""));
+        assert!(build_messages(&req(), &[], true).0.contains("\"search\""));
         let order = ["## NOTES SO FAR\n- Launch moved", "## ALREADY COVERED\n- Falcon", "## EARLIER IN THE MEETING", "## NEW LINES\nThem: Acme", "## PASSAGES\n[F1] E:/deals/acme.xlsx\nAcme 2025", "[F2] notes.md"];
         let mut at = 0;
         for part in order {
@@ -247,8 +289,8 @@ mod tests {
     #[test]
     fn a_question_adds_the_rule_and_the_section() {
         let r = CopilotRequest { question: Some("  What did we quote Acme? ".into()), ..req() };
-        let (system, user) = build_messages(&r, &[]);
-        assert!(system.ends_with("Notes may be []."));
+        let (system, user) = build_messages(&r, &[], true);
+        assert!(system.ends_with("Notes may be []."), "a question never offers a search");
         assert!(user.ends_with("## QUESTION\nWhat did we quote Acme?"));
         assert!(!user.contains("PASSAGES"));
     }
@@ -256,7 +298,7 @@ mod tests {
     #[test]
     fn long_text_keeps_the_newest_part() {
         let r = CopilotRequest { new_lines: format!("{}END", "x".repeat(10_000)), ..Default::default() };
-        let (_, user) = build_messages(&r, &[]);
+        let (_, user) = build_messages(&r, &[], false);
         assert!(user.ends_with("END"));
         assert!(user.len() < 6_100);
     }
@@ -278,6 +320,20 @@ mod tests {
         assert_eq!(out.cards[0].kind, "insight");
         assert_eq!(out.cards[0].files, ["E:/deals/acme.xlsx"]);
         assert_eq!(out.cards[1].kind, "answer");
+        assert_eq!(out.search, None);
+    }
+
+    #[test]
+    fn web_passages_become_links_and_a_search_request_is_kept() {
+        let mut p = passages();
+        p.push(Passage { source: "https://news.example/acme".into(), text: "Acme raised prices".into() });
+        let reply = r#"{"notes": [], "cards": [{"topic": "Acme prices", "points": ["Raised in 2026"], "files": ["F1", "F3"]}], "search": "Acme price increase 2026"}"#;
+        let out = parse_response(reply, &req(), &p).unwrap();
+        assert_eq!(out.cards[0].files, ["E:/deals/acme.xlsx"]);
+        assert_eq!(out.cards[0].links, ["https://news.example/acme"]);
+        assert_eq!(out.search.as_deref(), Some("Acme price increase 2026"));
+        let q = CopilotRequest { question: Some("q".into()), ..req() };
+        assert_eq!(parse_response(reply, &q, &p).unwrap().search, None);
     }
 
     #[test]
@@ -285,7 +341,18 @@ mod tests {
         let r = CopilotRequest { question: Some("What did we quote Acme?".into()), ..req() };
         let reply = r#"{"notes": [], "cards": [{"topic": "", "points": ["3900 a month"], "files": ["[F1]"]}, {"topic": "x", "points": ["y"]}]}"#;
         let out = parse_response(reply, &r, &passages()).unwrap();
-        assert_eq!(out.cards, [CopilotCard { kind: "question".into(), topic: "Answer".into(), points: vec!["3900 a month".into()], files: vec!["E:/deals/acme.xlsx".into()] }]);
+        assert_eq!(out.cards, [CopilotCard { kind: "question".into(), topic: "Answer".into(), points: vec!["3900 a month".into()], files: vec!["E:/deals/acme.xlsx".into()], links: vec![] }]);
+    }
+
+    #[test]
+    fn tavily_results_become_passages() {
+        let body = serde_json::json!({"results": [
+            {"title": "Acme raises prices", "url": "https://news.example/acme", "content": "Acme raised seat prices 8%."},
+            {"title": "empty", "url": "https://x.example", "content": ""},
+            {"title": "bad", "url": "javascript:alert(1)", "content": "x"}
+        ]});
+        assert_eq!(tavily_passages(&body), [Passage { source: "https://news.example/acme".into(), text: "Acme raises prices\nAcme raised seat prices 8%.".into() }]);
+        assert!(tavily_passages(&serde_json::json!({"detail": "bad key"})).is_empty());
     }
 
     #[test]

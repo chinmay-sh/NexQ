@@ -694,6 +694,7 @@ export interface CopilotCard {
   topic: string;
   points: string[];
   files: string[];
+  links: string[];
 }
 
 export interface CopilotResponse {
@@ -959,6 +960,7 @@ export type ContextStrategy = "stuffing" | "local_rag" | "gemini_cache";
 
 export interface RagConfig {
   enabled: boolean;
+  embedding_provider: "ollama" | "gemini" | "voyage";
   embedding_model: string;
   ollama_url: string;
   batch_size: number;

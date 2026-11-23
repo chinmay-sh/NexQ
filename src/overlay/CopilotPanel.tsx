@@ -4,6 +4,7 @@ import { copilotTick } from "../lib/ipc";
 import { useCopilotStore } from "../stores/copilotStore";
 import { useConfigStore } from "../stores/configStore";
 import { useTranscriptStore } from "../stores/transcriptStore";
+import { open } from "@tauri-apps/plugin-shell";
 
 const fileName = (path: string) => path.split(/[\\/]/).filter(Boolean).pop() || path;
 
@@ -77,9 +78,10 @@ export function CopilotPanel() {
   );
 }
 
-function CardBody({ card }: { card: { points: string[]; files: string[] } }) {
+function CardBody({ card }: { card: { points: string[]; files: string[]; links: string[] } }) {
   return <>
     {card.points.length > 0 && <ul className="mt-1.5 list-disc space-y-1 pl-4 text-[11px] leading-snug text-foreground/75">{card.points.map((point, i) => <li key={`${point}-${i}`}>{point}</li>)}</ul>}
     {card.files.length > 0 && <div className="mt-2 flex min-w-0 flex-wrap gap-1">{card.files.map((file) => <span key={file} title={file} className="max-w-full truncate rounded border border-border/25 bg-background/30 px-1.5 py-0.5 text-[9px] text-muted-foreground/80">{fileName(file)}</span>)}</div>}
+    {card.links?.length > 0 && <div className="mt-2 flex min-w-0 flex-wrap gap-1">{card.links.map((link) => { let hostname = link; try { hostname = new URL(link).hostname; } catch {} return <button key={link} type="button" title={link} onClick={() => { try { const url = new URL(link); if (url.protocol === "https:" || url.protocol === "http:") void open(url.href); } catch {} }} className="max-w-full truncate rounded-full border border-primary/20 bg-primary/5 px-2 py-0.5 text-[9px] text-primary/80 hover:bg-primary/10">{hostname}</button>; })}</div>}
   </>;
 }

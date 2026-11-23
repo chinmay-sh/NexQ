@@ -174,14 +174,11 @@ pub(crate) async fn retrieve_rag(
     if !(has_question || has_transcript) || !has_indexed_chunks {
         return Ok(out);
     }
-    let (Some(rag_arc), Some(db_arc)) = (state.rag.as_ref(), state.database.as_ref()) else {
+    let Some(db_arc) = state.database.as_ref() else {
         return Ok(out);
     };
 
-    let (mut config, embedder_url, embedding_model) = {
-        let rag_guard = rag_arc.lock().map_err(|e| e.to_string())?;
-        (rag_guard.config().clone(), rag_guard.embedder_url(), rag_guard.embedding_model())
-    };
+    let (mut config, embedder) = rag::current(state)?;
     config.top_k = top_k;
 
     let mut all_chunks: Vec<rag::search::ScoredChunk> = Vec::new();
@@ -189,7 +186,7 @@ pub(crate) async fn retrieve_rag(
     // Search 1: question only (clean semantic match)
     if let Some(ref q) = question_text {
         out.query = Some(q.clone());
-        match rag::RagManager::search_async(db_arc, q, &config, &embedder_url, &embedding_model).await {
+        match rag::RagManager::search_async(db_arc, q, &config, &embedder).await {
             Ok(chunks) => all_chunks.extend(chunks),
             Err(e) => log::warn!("RAG search (question-only) failed: {}", e),
         }
@@ -201,14 +198,14 @@ pub(crate) async fn retrieve_rag(
         if out.query.is_none() {
             out.query = Some(combined.clone());
         }
-        match rag::RagManager::search_async(db_arc, &combined, &config, &embedder_url, &embedding_model).await {
+        match rag::RagManager::search_async(db_arc, &combined, &config, &embedder).await {
             Ok(chunks) => all_chunks.extend(chunks),
             Err(e) => log::warn!("RAG search (combined) failed: {}", e),
         }
     } else if !has_question && has_transcript {
         // No question at all — search with transcript only as last resort
         out.query = Some(transcript_excerpt.clone());
-        match rag::RagManager::search_async(db_arc, &transcript_excerpt, &config, &embedder_url, &embedding_model).await {
+        match rag::RagManager::search_async(db_arc, &transcript_excerpt, &config, &embedder).await {
             Ok(chunks) => all_chunks.extend(chunks),
             Err(e) => log::warn!("RAG search (transcript-only) failed: {}", e),
         }
