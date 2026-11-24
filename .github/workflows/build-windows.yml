@@ -47,14 +47,30 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # tauri.windows.conf.json turns on signed updater artifacts, which need the
+      # upstream maintainer's private key (a merged --config/TAURI_CONFIG did not
+      # override it). This personal build makes none, and its updater checks this
+      # repository's releases, so it never offers to replace itself with upstream's.
+      - name: Turn off updater signing
+        shell: bash
+        run: |
+          node -e '
+            const fs = require("fs");
+            const edit = (file, change) => {
+              const config = JSON.parse(fs.readFileSync(file, "utf8"));
+              change(config);
+              fs.writeFileSync(file, JSON.stringify(config, null, 2));
+            };
+            edit("src-tauri/tauri.windows.conf.json", (c) => { c.bundle.createUpdaterArtifacts = false; });
+            edit("src-tauri/tauri.conf.json", (c) => {
+              c.bundle.createUpdaterArtifacts = false;
+              c.plugins.updater.endpoints = [`https://github.com/${process.env.GITHUB_REPOSITORY}/releases/latest/download/latest.json`];
+            });
+          '
+          grep -n "createUpdaterArtifacts\|releases/latest" src-tauri/tauri.conf.json src-tauri/tauri.windows.conf.json
+
       - name: Build installer
         run: npm run tauri build
-        env:
-          # tauri.windows.conf.json turns on signed updater artifacts, which need
-          # the upstream maintainer's private key. This build makes none, and its
-          # updater looks at this repository's releases instead of upstream's, so
-          # it never offers to replace itself with an upstream release.
-          TAURI_CONFIG: '{"bundle":{"createUpdaterArtifacts":false},"plugins":{"updater":{"endpoints":["https://github.com/${{ github.repository }}/releases/latest/download/latest.json"]}}}'
 
       - name: Upload installer
         uses: actions/upload-artifact@v4
