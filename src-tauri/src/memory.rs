@@ -148,7 +148,7 @@ fn replace_phrase(text: &str, phrase: &str, with: &str) -> String {
     out
 }
 
-const UPDATE_SYSTEM: &str = r##"You keep memory.md, NexQ's long-term memory about its user ("You" in meeting transcripts). NexQ's meeting copilot reads it in every meeting to help the user.
+const UPDATE_SYSTEM: &str = r###"You keep memory.md, NexQ's long-term memory about its user ("You" in meeting transcripts). NexQ's meeting copilot reads it in every meeting to help the user.
 
 Return the complete updated memory.md as Markdown, with no code fence and no other text.
 
@@ -156,7 +156,7 @@ Return the complete updated memory.md as Markdown, with no code fence and no oth
 - Leave out details that only matter for this one meeting (those go in its notes) and anything said only by others about themselves.
 - Merge and tighten instead of growing without end: stay under 1,500 words.
 - Keep a "## Vocabulary" section: the user's proper names, project names and jargon, one per line, as "- TERM" or, when speech recognition got it wrong in the transcript, "- TERM — heard as: misheard, forms" (for example a project from the user's FILES transcribed as a common word). Keep the existing entries.
-- If nothing new was learned, return the memory unchanged."##;
+- If nothing new was learned, return the memory unchanged."###;
 
 /// The system prompt and user message for updating the memory after a meeting.
 pub fn update_messages(memory: &str, transcript: &str, notes: &[String], files: &[String]) -> (String, String) {
