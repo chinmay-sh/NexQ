@@ -7,6 +7,7 @@ pub mod credential_commands;
 pub mod gemini_cache_commands;
 pub mod intelligence_commands;
 pub mod llm_commands;
+pub mod memory_commands;
 pub mod log_commands;
 pub mod meeting_chat_commands;
 pub mod meeting_commands;

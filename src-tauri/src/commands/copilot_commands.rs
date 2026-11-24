@@ -29,12 +29,19 @@ const QUERY_CHARS: usize = 600;
 /// `request.model`, through its own client so it never waits on (or delays)
 /// an answer the user asked for.
 #[command]
-pub async fn copilot_tick(app: AppHandle, request: CopilotRequest) -> Result<CopilotResponse, String> {
+pub async fn copilot_tick(app: AppHandle, mut request: CopilotRequest) -> Result<CopilotResponse, String> {
     if request.new_lines.trim().is_empty() && request.question().is_none() {
         return Ok(CopilotResponse::default());
     }
     let state = app.state::<AppState>();
     let scenario = state.active_scenario.read().map(|s| s.system_prompt.clone()).unwrap_or_default();
+    // What NexQ remembers about the user; its vocabulary fixes misheard names
+    // before the knowledge-base search and the prompt see the transcript.
+    let memory = crate::memory::load_app(&app);
+    let vocabulary = crate::memory::vocabulary(&memory);
+    request.new_lines = crate::memory::apply_vocabulary(&request.new_lines, &vocabulary);
+    request.recent_context = crate::memory::apply_vocabulary(&request.recent_context, &vocabulary);
+    request.question = request.question.map(|q| crate::memory::apply_vocabulary(&q, &vocabulary));
 
     // Attached files go in whole, like Meetily: a few documents fit, and the
     // model sees all of them instead of a few matching snippets.
@@ -77,7 +84,7 @@ pub async fn copilot_tick(app: AppHandle, request: CopilotRequest) -> Result<Cop
     }
 
     let ask = |request: &CopilotRequest, passages: &[Passage], offer_search: bool| {
-        let (system, user) = copilot::build_messages(request, passages, offer_search, &scenario);
+        let (system, user) = copilot::build_messages(request, passages, offer_search, &scenario, &memory);
         vec![LLMMessage { role: "system".into(), content: system }, LLMMessage { role: "user".into(), content: user }]
     };
     let native = request.web_search && native_search;
@@ -152,7 +159,7 @@ fn tail(text: &str, n: usize) -> String {
 /// provider while the user waits on an answer; CLI agents (which manage their
 /// own sessions) use the shared one.
 /// Also says whether the provider searches the web itself (Gemini, OpenRouter).
-fn copilot_provider(
+pub(crate) fn copilot_provider(
     state: &AppState,
     model_override: Option<&str>,
 ) -> Result<(Arc<TokioMutex<Box<dyn LLMProvider>>>, String, bool), String> {
@@ -182,7 +189,7 @@ fn copilot_provider(
 }
 
 /// Run `messages` without any `llm_stream_*` events and return the full reply.
-async fn complete_silently(
+pub(crate) async fn complete_silently(
     app: &AppHandle,
     provider: Arc<TokioMutex<Box<dyn LLMProvider>>>,
     model: &str,

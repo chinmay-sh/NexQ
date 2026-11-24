@@ -15,6 +15,7 @@ import { useConfigStore } from "./configStore";
 import { useTranscriptStore } from "./transcriptStore";
 import { initMeetingSpeakers, resetMeetingScopedStores } from "./resetMeeting";
 import { showToast } from "./toastStore";
+import { learnFromMeeting } from "../lib/memoryLearning";
 
 interface MeetingState {
   // View state
@@ -90,6 +91,7 @@ interface MeetingState {
 
 // Overlapping starts keep the flag up until the last one settles.
 let startingFlows = 0;
+const memoryUpdateMeetings = new Set<string>();
 
 export const useMeetingStore = create<MeetingState>((set, get) => ({
   currentView: "launcher",
@@ -355,6 +357,35 @@ export const useMeetingStore = create<MeetingState>((set, get) => ({
       );
       // Keep the meeting and its transcript: End can be pressed again.
       if (failed > 0) throw unsavedTranscriptError(failed);
+    }
+
+    // Capture only final transcript lines and copilot notes before teardown/reset.
+    if (meeting) {
+      try {
+        let captureWindow = "";
+        try { captureWindow = (await import("@tauri-apps/api/webviewWindow")).getCurrentWebviewWindow().label; } catch { /* not running in Tauri */ }
+        if (shouldPersistOverlayData(captureWindow, state.overlayMeetingId === meeting.id)) {
+        const config = useConfigStore.getState();
+        const segments = useTranscriptStore.getState().segments.filter((s) => s.is_final && s.text.trim());
+        const { useSpeakerStore } = await import("./speakerStore");
+        const { assistSpeakerLabel } = await import("../lib/speakerLabels");
+        const speakerState = useSpeakerStore.getState();
+        const speakers = { ...speakerState.speakers, ...Object.fromEntries(speakerState.getRemoteSpeakers().map((s) => [s.id, s])) };
+        const transcript = segments.map((s) => {
+          const label = assistSpeakerLabel(s, (key) => speakers[key]?.display_name).replace(/^User$/, "You");
+          return `${label}: ${s.text.trim()}`;
+        }).join("\n");
+        const { useCopilotStore } = await import("./copilotStore");
+        const notes = [...useCopilotStore.getState().notes];
+        const mayLearn = !memoryUpdateMeetings.has(meeting.id) && config.memoryLearnFromMeetings;
+        if (mayLearn) memoryUpdateMeetings.add(meeting.id);
+        learnFromMeeting(mayLearn, transcript, notes, config.copilotModel,
+          (text, capturedNotes, model) => import("../lib/ipc").then(({ updateMemoryFromMeeting }) => updateMemoryFromMeeting(text, capturedNotes, model)),
+          (message, type) => showToast(message, type));
+        }
+      } catch (err) {
+        console.warn("[meetingStore] Could not capture memory update:", err);
+      }
     }
 
     // 4. Persist AI call log entries as AI interactions before ending

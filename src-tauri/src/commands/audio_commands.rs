@@ -2035,7 +2035,10 @@ async fn create_stt_provider_for_party(
             let lang = stt_language.clone();
             let key = get_credential_key(state, "deepgram");
             log::info!("Deepgram key for '{}': {}", party_role, if key.is_some() { "present" } else { "MISSING" });
-            let dg_config = deepgram_config.unwrap_or_default();
+            let mut dg_config = deepgram_config.unwrap_or_default();
+            // memory.md's vocabulary: names and terms Deepgram should listen for.
+            let terms = crate::memory::terms(&crate::memory::load_app(app));
+            dg_config.keyterms = crate::memory::merge_words(dg_config.keyterms, terms, 100);
             let mut p = match key.as_deref() {
                 Some(k) => crate::stt::deepgram::DeepgramSTT::with_api_key(k),
                 None => crate::stt::deepgram::DeepgramSTT::new(),
@@ -2128,7 +2131,10 @@ async fn create_stt_provider_for_party(
             log::info!("Gemini Live keys for '{}': {}", party_role, keys.len());
             let mut p = crate::stt::gemini_live::GeminiLiveSTT::with_api_keys(keys);
             p.set_language(&stt_language);
-            p.set_config(get_gemini_live_config(state));
+            let mut gl_config = get_gemini_live_config(state);
+            let terms = crate::memory::terms(&crate::memory::load_app(app));
+            gl_config.vocabulary = crate::memory::merge_words(gl_config.vocabulary, terms, crate::stt::gemini_live::MAX_VOCABULARY_TERMS);
+            p.set_config(gl_config);
             p.set_app_handle(app.clone());
             p.set_party(party_role);
             Ok(Some(Box::new(p)))

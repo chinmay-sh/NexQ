@@ -14,6 +14,9 @@ import { BUILT_IN_SCENARIOS } from "../lib/scenarios";
 import type { PartyAudioConfig } from "../lib/types";
 import { useMeetingStore } from "./meetingStore";
 import { useScenarioStore } from "./scenarioStore";
+import { useTranscriptStore } from "./transcriptStore";
+import { useCopilotStore } from "./copilotStore";
+import { useConfigStore } from "./configStore";
 
 const boardReview = {
   id: "custom_1",
@@ -33,6 +36,7 @@ beforeAll(() => {
   mockIPC((cmd, args) => {
     calls.set(cmd, args as Record<string, unknown>);
     if (cmd === "stop_capture" && stopError) throw stopError;
+    if (cmd === "list_meetings") return "[]";
     return cmd === "start_meeting" ? JSON.stringify({ id: "meeting-1", title: "Standup" }) : [];
   });
 });
@@ -41,6 +45,7 @@ beforeEach(() => {
   calls.clear();
   saved.config = {};
   stopError = undefined;
+  useConfigStore.setState({ memoryLearnFromMeetings: false });
 });
 
 it("keeps the meeting open if the MAI transcript is still draining", async () => {
@@ -99,5 +104,39 @@ describe("startMeetingFlow's scenario", () => {
     expect(calls.get("set_active_scenario")).toMatchObject({ systemPrompt: BUILT_IN_SCENARIOS[0].system_prompt });
     expect(calls.get("update_meeting_mode")).toMatchObject({ aiScenario: "team_meeting" });
     expect(useMeetingStore.getState().aiScenario).toBe("team_meeting");
+  });
+});
+
+describe("end meeting memory learning", () => {
+  it("schedules once from final transcript lines and captured copilot notes", async () => {
+    calls.delete("update_memory_from_meeting");
+    useConfigStore.setState({ memoryLearnFromMeetings: true, copilotModel: "chosen-model" });
+    await useMeetingStore.getState().startMeetingFlow("Memory test", "online", "team_meeting");
+    useTranscriptStore.setState({ segments: [
+      { id: "final", text: "Project KASH", speaker: "User", timestamp_ms: 1, is_final: true },
+      { id: "partial", text: "ignore this", speaker: "Them", timestamp_ms: 2, is_final: false },
+    ] } as never);
+    useCopilotStore.setState({ notes: ["Launch is soon"] });
+    await useMeetingStore.getState().endMeetingFlow();
+    await vi.waitFor(() => expect(calls.get("update_memory_from_meeting")).toEqual({ transcript: "You: Project KASH", notes: ["Launch is soon"], model: "chosen-model" }));
+    expect(calls.get("update_memory_from_meeting")).toEqual({ transcript: "You: Project KASH", notes: ["Launch is soon"], model: "chosen-model" });
+  });
+
+  it("does not schedule when learning is off", async () => {
+    calls.delete("update_memory_from_meeting");
+    useConfigStore.setState({ memoryLearnFromMeetings: false });
+    await useMeetingStore.getState().startMeetingFlow("No learning", "online", "team_meeting");
+    useTranscriptStore.setState({ segments: [{ id: "x", text: "hello", speaker: "User", timestamp_ms: 1, is_final: true }] } as never);
+    await useMeetingStore.getState().endMeetingFlow();
+    expect(calls.has("update_memory_from_meeting")).toBe(false);
+  });
+
+  it("does not schedule when the meeting has no final transcript line", async () => {
+    calls.delete("update_memory_from_meeting");
+    useConfigStore.setState({ memoryLearnFromMeetings: true });
+    await useMeetingStore.getState().startMeetingFlow("No transcript", "online", "team_meeting");
+    useTranscriptStore.setState({ segments: [{ id: "partial", text: "still speaking", speaker: "User", timestamp_ms: 1, is_final: false }] } as never);
+    await useMeetingStore.getState().endMeetingFlow();
+    expect(calls.has("update_memory_from_meeting")).toBe(false);
   });
 });

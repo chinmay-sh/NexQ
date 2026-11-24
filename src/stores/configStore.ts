@@ -317,6 +317,8 @@ interface ConfigState {
   copilotAnswerQuestions: boolean;
   copilotWebSearch: boolean;
   copilotModel: string;
+  memoryLearnFromMeetings: boolean;
+  setMemoryLearnFromMeetings: (enabled: boolean) => void;
 
   // System
   startOnLogin: boolean;
@@ -547,6 +549,7 @@ export const useConfigStore = create<ConfigState>((set) => ({
   copilotAnswerQuestions: true,
   copilotWebSearch: false,
   copilotModel: "",
+  memoryLearnFromMeetings: true,
   startOnLogin: false,
   dataDirectory: "",
   firstRunCompleted: false,
@@ -906,6 +909,7 @@ export const useConfigStore = create<ConfigState>((set) => ({
   setCopilotAnswerQuestions: (enabled) => { set({ copilotAnswerQuestions: enabled }); persistValue("copilotAnswerQuestions", enabled); },
   setCopilotWebSearch: (enabled) => { set({ copilotWebSearch: enabled }); persistValue("copilotWebSearch", enabled); },
   setCopilotModel: (model) => { set({ copilotModel: model }); persistValue("copilotModel", model); },
+  setMemoryLearnFromMeetings: (enabled) => { set({ memoryLearnFromMeetings: enabled }); persistValue("memoryLearnFromMeetings", enabled); },
   setStartOnLogin: (enabled) => {
     set({ startOnLogin: enabled });
     persistValue("startOnLogin", enabled);
@@ -1112,6 +1116,7 @@ export const useConfigStore = create<ConfigState>((set) => ({
       const copilotAnswerQuestions = await store.get<boolean>("copilotAnswerQuestions");
       const copilotWebSearch = await store.get<boolean>("copilotWebSearch");
       const copilotModel = await store.get<string>("copilotModel");
+      const memoryLearnFromMeetings = await store.get<boolean>("memoryLearnFromMeetings");
       const startOnLogin = await store.get<boolean>("startOnLogin");
       const dataDirectory = await store.get<string>("dataDirectory");
       const firstRunCompleted = await store.get<boolean>("firstRunCompleted");
@@ -1329,6 +1334,7 @@ export const useConfigStore = create<ConfigState>((set) => ({
         copilotAnswerQuestions: copilotAnswerQuestions ?? true,
         copilotWebSearch: copilotWebSearch ?? false,
         copilotModel: copilotModel ?? "",
+        memoryLearnFromMeetings: memoryLearnFromMeetings ?? true,
         ...(startOnLogin != null && { startOnLogin }),
         ...(dataDirectory != null && { dataDirectory }),
         ...(firstRunCompleted != null && { firstRunCompleted }),
@@ -1464,6 +1470,7 @@ export const useConfigStore = create<ConfigState>((set) => ({
       store.onKeyChange<boolean>("copilotAnswerQuestions", (val) => { if (val != null) set({ copilotAnswerQuestions: val }); });
       store.onKeyChange<boolean>("copilotWebSearch", (val) => { if (val != null) set({ copilotWebSearch: val }); });
       store.onKeyChange<string>("copilotModel", (val) => { if (val != null) set({ copilotModel: val }); });
+      store.onKeyChange<boolean>("memoryLearnFromMeetings", (val) => { if (val != null) set({ memoryLearnFromMeetings: val }); });
       store.onKeyChange<boolean>("contextScopeSticky", (val) => {
         if (val != null) set({ contextScopeSticky: val });
       });

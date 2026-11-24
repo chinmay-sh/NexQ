@@ -671,6 +671,20 @@ export async function getConfig(key: string): Promise<string | null> {
   return invoke("get_config", { key });
 }
 
+// == IPC: User memory ==
+
+export async function getMemory(): Promise<string> {
+  return invoke<string>("get_memory");
+}
+
+export async function setMemory(text: string): Promise<void> {
+  return invoke("set_memory", { text });
+}
+
+export async function updateMemoryFromMeeting(transcript: string, notes: string[], model: string | null): Promise<string> {
+  return invoke<string>("update_memory_from_meeting", { transcript, notes, model });
+}
+
 export async function setConfig(key: string, value: string): Promise<void> {
   return invoke("set_config", { key, value });
 }

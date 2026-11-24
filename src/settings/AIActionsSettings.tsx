@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { isCliAgent } from "../lib/cliAgents";
 import { deleteApiKey, hasApiKey, storeApiKey } from "../lib/ipc";
+import { MemorySettings } from "./MemorySettings";
 import { open } from "@tauri-apps/plugin-shell";
 
 // ─── Constants ───────────────────────────────────────────
@@ -412,6 +413,7 @@ export function AIActionsSettings() {
           </fieldset>
         </div>
       </div>
+      <MemorySettings />
       {/* ═══ Two-column grid: Response Style │ Behavior + Context ═══ */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         {/* ─── Left Column: Response Style ─── */}

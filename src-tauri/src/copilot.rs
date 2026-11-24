@@ -93,6 +93,8 @@ notes: everything in the NEW LINES that belongs in meeting notes: requests, prop
 
 cards: help for what is being discussed right now. Most important: when You talk about, or are asked about, your own experience, skills, projects or background, give a card of talking points You can say next, built from the user's files under PASSAGES: specific projects, technologies, numbers and outcomes, written in the first person ("I ..."). Also: answers to questions raised, facts the participants are unsure about, and relevant insights from the user's files under PASSAGES. Each card has a 3 to 8 word topic, 2 to 4 short points, and "files": the ids of the passages it uses ([] if none). Prefer the user's files to general knowledge, never invent facts about the user's own work, and say when general knowledge may be out of date. No card for a topic under ALREADY COVERED unless something new was asked about it. Small talk and scheduling get no card. [] when nothing is worth a card.
 
+ABOUT THE USER is what NexQ remembers about the user: use it, and use its spellings (names in its Vocabulary are often misheard in the transcript).
+
 Write notes and cards in English."#;
 
 const SEARCH_RULE: &str = "\n\nYou cannot browse, but when the participants need a current public fact that neither the passages nor your knowledge cover (recent news, prices, releases), add \"search\": \"<a short web search query>\" to the JSON instead of guessing. At most one search; omit it otherwise.";
@@ -114,9 +116,10 @@ fn last<'a>(items: &'a [String], n: usize) -> &'a [String] {
 
 /// The system prompt and the user message for one check. `offer_search`
 /// lets the model ask for a web search (timer checks with Tavily);
-/// `scenario` is the active scenario's prompt (what kind of meeting this is).
+/// `scenario` is the active scenario's prompt (what kind of meeting this is);
+/// `memory` is memory.md (what NexQ knows about the user).
 /// Passages go in as given: the caller sizes them.
-pub fn build_messages(req: &CopilotRequest, passages: &[Passage], offer_search: bool, scenario: &str) -> (String, String) {
+pub fn build_messages(req: &CopilotRequest, passages: &[Passage], offer_search: bool, scenario: &str, memory: &str) -> (String, String) {
     let mut system = SYSTEM.to_string();
     if req.question().is_some() {
         system.push_str(QUESTION_RULE);
@@ -131,6 +134,7 @@ pub fn build_messages(req: &CopilotRequest, passages: &[Passage], offer_search: 
     };
     let list = |items: &[String]| items.iter().map(|i| format!("- {}", i)).collect::<Vec<_>>().join("\n");
     section(&mut user, "MEETING TYPE", first_chars(scenario, MAX_SCENARIO_CHARS));
+    section(&mut user, "ABOUT THE USER", first_chars(memory, crate::memory::MAX_PROMPT_CHARS));
     section(&mut user, "NOTES SO FAR", &list(last(&req.notes, MAX_REMEMBERED)));
     section(&mut user, "ALREADY COVERED", &list(last(&req.covered, MAX_REMEMBERED)));
     section(&mut user, "EARLIER IN THE MEETING", tail(&req.recent_context, MAX_CONTEXT_CHARS));
@@ -296,10 +300,10 @@ mod tests {
 
     #[test]
     fn messages_carry_every_section_in_order() {
-        let (system, user) = build_messages(&req(), &passages(), false, "");
+        let (system, user) = build_messages(&req(), &passages(), false, "", "");
         assert!(!system.contains("A QUESTION is given"));
         assert!(!system.contains("\"search\""));
-        assert!(build_messages(&req(), &[], true, "").0.contains("\"search\""));
+        assert!(build_messages(&req(), &[], true, "", "").0.contains("\"search\""));
         let order = ["## NOTES SO FAR\n- Launch moved", "## ALREADY COVERED\n- Falcon", "## EARLIER IN THE MEETING", "## NEW LINES\nThem: Acme", "## PASSAGES\n[F1] E:/deals/acme.xlsx\nAcme 2025", "[F2] notes.md"];
         let mut at = 0;
         for part in order {
@@ -321,15 +325,18 @@ mod tests {
 
     #[test]
     fn the_meeting_type_comes_first() {
-        let (_, user) = build_messages(&req(), &[], false, "Job interview for a software role.");
+        let (_, user) = build_messages(&req(), &[], false, "Job interview for a software role.", "");
         assert!(user.starts_with("## MEETING TYPE\nJob interview for a software role.\n\n## NOTES SO FAR"));
-        assert!(!build_messages(&req(), &[], false, "  ").1.contains("MEETING TYPE"));
+        let (system, user) = build_messages(&req(), &[], false, "Interview", "# About me\n## Vocabulary\n- KASH");
+        assert!(system.contains("ABOUT THE USER is what NexQ remembers"));
+        assert!(user.starts_with("## MEETING TYPE\nInterview\n\n## ABOUT THE USER\n# About me\n## Vocabulary\n- KASH\n\n## NOTES SO FAR"));
+        assert!(!build_messages(&req(), &[], false, "  ", "").1.contains("MEETING TYPE"));
     }
 
     #[test]
     fn a_question_adds_the_rule_and_the_section() {
         let r = CopilotRequest { question: Some("  What did we quote Acme? ".into()), ..req() };
-        let (system, user) = build_messages(&r, &[], true, "");
+        let (system, user) = build_messages(&r, &[], true, "", "");
         assert!(system.ends_with("Notes may be []."), "a question never offers a search");
         assert!(user.ends_with("## QUESTION\nWhat did we quote Acme?"));
         assert!(!user.contains("PASSAGES"));
@@ -338,7 +345,7 @@ mod tests {
     #[test]
     fn long_text_keeps_the_newest_part() {
         let r = CopilotRequest { new_lines: format!("{}END", "x".repeat(10_000)), ..Default::default() };
-        let (_, user) = build_messages(&r, &[], false, "");
+        let (_, user) = build_messages(&r, &[], false, "", "");
         assert!(user.ends_with("END"));
         assert!(user.len() < 6_100);
     }

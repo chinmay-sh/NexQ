@@ -232,6 +232,10 @@ The AI Actions panel configures how NexQ's AI assistance behaves during meetings
 ### Meeting copilot
 
 Enable **Meeting copilot** in **Settings > AI Actions** to get periodic meeting notes, answers and insights from indexed knowledge-base files. Detected questions can be answered immediately and pinned in the Copilot view; this is separate from Auto-Answer, which continues to behave as configured above. The copilot uses the active LLM provider unless you enter a model override. Choose a check interval of 5–60 seconds; each check is one model call, so shorter intervals cost more. Copilot reads indexed knowledge-base folders and files. With web search enabled, Gemini and OpenRouter use native search; other providers use Tavily if a Tavily API key is saved under Meeting copilot settings. Without that key, those providers do not search the web. Get a key at [tavily.com](https://tavily.com); NexQ stores it securely and never reads it back into the settings UI. In the overlay's AI response area, select **Copilot**; return to the existing Ask box and mode buttons with **AI response**.
+### Memory
+
+The **Memory** section just below Meeting copilot in **Settings > AI Actions** edits `memory.md`, NexQ's growing notes about your projects, work, people and vocabulary. The copilot reads it on every check. **Learn from each meeting** is on by default; after a meeting with final transcript lines, NexQ asks the selected model to merge useful new details into memory. Edit the Markdown directly, then choose **Save**; **Revert** reloads the saved file. In `## Vocabulary`, list one term per line and optionally its speech-recognition mishearings, for example `- KASH — heard as: cash, cache`.
+
 - **Response style** -- adjust the tone, length, and format of AI responses
 - **Context window** -- control how much conversation history is sent to the LLM with each request
 
