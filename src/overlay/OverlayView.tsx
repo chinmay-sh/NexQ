@@ -48,6 +48,8 @@ import { toggleStealthMode } from "../hooks/useGlobalShortcut";
 import { formatShortcut, isMacPlatform } from "../lib/shortcutLabel";
 import { formatDuration } from "../lib/utils";
 import { useMeetingCopilot } from "../hooks/useMeetingCopilot";
+import { useStreamStore } from "../stores/streamStore";
+import { autoAnswerRunning } from "../lib/autoAnswer";
 import { CopilotPanel } from "./CopilotPanel";
 
 // ════════════════════════════════════════════════════════════════
@@ -63,8 +65,8 @@ export function OverlayView() {
   const [statsOpen, setStatsOpen] = useState(false);
   const [bookmarksOpen, setBookmarksOpen] = useState(false);
   const [layoutMode, setLayoutMode] = useState<"split" | "ai" | "transcript">("split");
-  const [responseView, setResponseView] = useState<"ai" | "copilot">("ai");
   const copilotEnabled = useConfigStore((s) => s.copilotEnabled);
+  const [responseView, setResponseView] = useState<"ai" | "copilot">(copilotEnabled ? "copilot" : "ai");
   useMeetingCopilot();
 
   // The overlay window stays mounted between meetings, so reset its local UI
@@ -75,8 +77,14 @@ export function OverlayView() {
     setStatsOpen(false);
     setBookmarksOpen(false);
     setLayoutMode("split");
-    setResponseView("ai");
+    // Meetings open on the copilot when it is on.
+    setResponseView(useConfigStore.getState().copilotEnabled ? "copilot" : "ai");
   }, [activeMeetingId]);
+  // An answer you asked for shows in the AI view; Auto-Answer doesn't pull you off the copilot.
+  const requestStartedAt = useStreamStore((s) => s.requestStartedAt);
+  useEffect(() => {
+    if (requestStartedAt && !autoAnswerRunning()) setResponseView("ai");
+  }, [requestStartedAt]);
   // A captured screenshot needs the Ask box, which the "transcript" layout hides:
   // switch to the split view (the Ask box takes the picture when it mounts).
   const layoutRef = useRef(layoutMode);
@@ -378,7 +386,7 @@ export function OverlayView() {
           {/* AI Response */}
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl bg-card/20">
             <div className="flex shrink-0 items-center gap-1 border-b border-border/20 px-2.5 py-1.5">
-              {responseView === "ai" ? <ModeButtons /> : <span className="flex-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">Meeting copilot</span>}
+              <ModeButtons />
               {copilotEnabled && <button onClick={() => setResponseView((v) => v === "ai" ? "copilot" : "ai")} className={`ml-auto rounded-md px-2 py-1 text-[10px] font-semibold transition-colors ${responseView === "copilot" ? "bg-primary/15 text-primary" : "text-muted-foreground/60 hover:bg-accent/50 hover:text-foreground"}`} aria-pressed={responseView === "copilot"}>{responseView === "ai" ? "Copilot" : "AI response"}</button>}
             </div>
             <div className="flex min-h-0 flex-1 flex-col p-3">

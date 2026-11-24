@@ -162,13 +162,13 @@ describe("configStore: meeting copilot preferences across windows", () => {
   it("persists defaults and synchronizes copilot settings", async () => {
     const launcher = await openWindow();
     const overlay = await openWindow();
-    expect(launcher.getState()).toMatchObject({ copilotEnabled: false, copilotIntervalSeconds: 10, copilotAnswerQuestions: true, copilotWebSearch: false, copilotModel: "" });
-    launcher.getState().setCopilotEnabled(true);
+    expect(launcher.getState()).toMatchObject({ copilotEnabled: true, copilotIntervalSeconds: 10, copilotAnswerQuestions: true, copilotWebSearch: false, copilotModel: "" });
+    launcher.getState().setCopilotEnabled(false);
     launcher.getState().setCopilotIntervalSeconds(20);
     launcher.getState().setCopilotModel("model-x");
-    await vi.waitFor(() => expect(overlay.getState()).toMatchObject({ copilotEnabled: true, copilotIntervalSeconds: 20, copilotModel: "model-x" }));
+    await vi.waitFor(() => expect(overlay.getState()).toMatchObject({ copilotEnabled: false, copilotIntervalSeconds: 20, copilotModel: "model-x" }));
     const nextStart = await openWindow();
-    expect(nextStart.getState()).toMatchObject({ copilotEnabled: true, copilotIntervalSeconds: 20, copilotModel: "model-x" });
+    expect(nextStart.getState()).toMatchObject({ copilotEnabled: false, copilotIntervalSeconds: 20, copilotModel: "model-x" });
   });
 });
 
