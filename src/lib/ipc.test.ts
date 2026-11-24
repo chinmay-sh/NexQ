@@ -126,6 +126,15 @@ describe("startCapturePerParty", () => {
     await startCapturePerParty(you, them);
     expect(invoke.mock.calls[0][1].skipYouStt).toBe(false);
   });
+
+  it("in person, transcribes the room from your mic when Them is a speaker output", async () => {
+    const speakers: PartyAudioConfig = { ...them, device_id: "Speakers", is_input_device: false };
+    await startCapturePerParty(you, speakers, { skipYouStt: true });
+    expect(JSON.parse(invoke.mock.calls[0][1].themConfig)).toEqual({ ...speakers, device_id: "Mic", is_input_device: true });
+    // Online meetings keep the speaker loopback for the other side.
+    await startCapturePerParty(you, speakers);
+    expect(JSON.parse(invoke.mock.calls[1][1].themConfig)).toEqual(speakers);
+  });
 });
 
 describe("testAzureMaiConnection", () => {

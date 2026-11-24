@@ -140,9 +140,13 @@ export async function startCapturePerParty(
   themConfig: PartyAudioConfig,
   options: { skipYouStt?: boolean } = {}
 ): Promise<void> {
+  // In person, "Them" is the room mic: a speaker loopback there hears only silence, so use your mic.
+  const room = options.skipYouStt && !themConfig.is_input_device
+    ? { ...themConfig, device_id: youConfig.device_id, is_input_device: true }
+    : themConfig;
   return invoke("start_capture_per_party", {
     youConfig: JSON.stringify(youConfig),
-    themConfig: JSON.stringify(themConfig),
+    themConfig: JSON.stringify(room),
     skipYouStt: options.skipYouStt ?? false,
   });
 }
