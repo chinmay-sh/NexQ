@@ -985,6 +985,8 @@ export interface RagIndexStatus {
 
 export interface RagFolder {
   path: string;
+  /** Added under Personal sources (removed there, not here). */
+  personal: boolean;
   exists: boolean;
   files: number;
   chunks: number;

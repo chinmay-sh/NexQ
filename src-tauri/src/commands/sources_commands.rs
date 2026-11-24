@@ -881,6 +881,7 @@ pub fn set_personal_sources(
             .map_err(|_| "Couldn't save your sources".to_string())?;
         std::mem::replace(&mut *slot, config.clone())
     };
+    let folders_changed = old.notes_folders != config.notes_folders;
     let store = SystemSecrets::new();
     let pending: Vec<McpServer> = state
         .pending_servers
@@ -900,6 +901,10 @@ pub fn set_personal_sources(
     };
     if restart {
         crate::commands::meeting_commands::restart_sources_sessions(&app);
+    }
+    // Notes folders are also the copilot's knowledge base: index a change now.
+    if folders_changed {
+        crate::rag::folders::spawn_sync(app.clone());
     }
     Ok(())
 }

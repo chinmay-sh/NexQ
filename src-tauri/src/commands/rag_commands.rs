@@ -60,7 +60,7 @@ pub async fn rebuild_rag_index(
         }
     }
 
-    rag::folders::sync(db_arc, || rag::current(&state), &app_handle).await?;
+    rag::folders::sync(db_arc, || rag::current(&state), &rag::folders::personal_folders(&state), &app_handle).await?;
 
     // Emit completion event
     let _ = app_handle.emit("rag_index_progress", serde_json::json!({
@@ -222,7 +222,8 @@ pub async fn update_rag_config(
 pub async fn list_rag_folders(state: State<'_, AppState>) -> Result<String, String> {
     let db_arc = state.database.as_ref().ok_or_else(|| "Database not initialized".to_string())?;
     let db = db_arc.lock().map_err(|e| e.to_string())?;
-    serde_json::to_string(&rag::folders::folder_infos(db.connection())).map_err(|e| e.to_string())
+    let personal = rag::folders::personal_folders(&state);
+    serde_json::to_string(&rag::folders::folder_infos(db.connection(), &personal)).map_err(|e| e.to_string())
 }
 
 /// Add a folder to the knowledge base and index it in the background.
@@ -242,7 +243,7 @@ pub async fn add_rag_folder(path: String, app_handle: AppHandle, state: State<'_
         folders.push(path);
         rag::folders::save_folders(db.connection(), &folders)?;
     }
-    spawn_folder_sync(app_handle);
+    rag::folders::spawn_sync(app_handle);
     Ok(())
 }
 
@@ -255,7 +256,7 @@ pub async fn remove_rag_folder(path: String, app_handle: AppHandle, state: State
         let folders: Vec<String> = rag::folders::load_folders(db.connection()).into_iter().filter(|f| f != &path).collect();
         rag::folders::save_folders(db.connection(), &folders)?;
     }
-    spawn_folder_sync(app_handle);
+    rag::folders::spawn_sync(app_handle);
     Ok(())
 }
 
@@ -266,13 +267,6 @@ pub async fn sync_rag_folders(app_handle: AppHandle) -> Result<String, String> {
     serde_json::to_string(&report).map_err(|e| e.to_string())
 }
 
-fn spawn_folder_sync(app_handle: AppHandle) {
-    tauri::async_runtime::spawn(async move {
-        if let Err(e) = rag::folders::sync_app(&app_handle).await {
-            log::warn!("RAG folders: sync failed: {}", e);
-        }
-    });
-}
 
 #[command]
 pub async fn test_ollama_embedding_connection(

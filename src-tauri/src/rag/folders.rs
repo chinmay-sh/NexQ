@@ -3,6 +3,9 @@
 //! scan compares each file's modified time and size with those last indexed,
 //! re-indexes new and changed files, and drops files that are gone.
 //!
+//! The folders are the ones added here plus the enabled notes folders under
+//! Personal sources, so a folder added in either place is searched.
+//!
 //! Scans run when a folder is added or removed, on "Rescan", and every minute
 //! in the background (`run_rescans`).
 
@@ -181,13 +184,37 @@ pub fn clear_files(conn: &Connection) -> Result<(), String> {
 #[derive(Debug, Clone, Serialize)]
 pub struct FolderInfo {
     pub path: String,
+    /// Comes from Personal sources (removed there, not here).
+    pub personal: bool,
     pub exists: bool,
     pub files: usize,
     pub chunks: usize,
 }
 
-pub fn folder_infos(conn: &Connection) -> Vec<FolderInfo> {
-    load_folders(conn)
+/// `saved` followed by the `personal` folders not already in it (ignoring case).
+pub fn merge_folders(saved: Vec<String>, personal: &[String]) -> Vec<String> {
+    let mut all = saved;
+    for p in personal {
+        if !all.iter().any(|f| f.eq_ignore_ascii_case(p)) {
+            all.push(p.clone());
+        }
+    }
+    all
+}
+
+/// The enabled notes folders under Personal sources.
+pub fn personal_folders(state: &crate::state::AppState) -> Vec<String> {
+    state
+        .personal_sources
+        .read()
+        .map(|s| s.enabled_folders().into_iter().map(|f| f.path.clone()).filter(|p| !p.trim().is_empty()).collect())
+        .unwrap_or_default()
+}
+
+pub fn folder_infos(conn: &Connection, personal: &[String]) -> Vec<FolderInfo> {
+    let saved = load_folders(conn);
+    let own: Vec<String> = saved.iter().map(|f| f.to_lowercase()).collect();
+    merge_folders(saved, personal)
         .into_iter()
         .map(|path| {
             let files: i64 = conn
@@ -200,7 +227,8 @@ pub fn folder_infos(conn: &Connection) -> Vec<FolderInfo> {
                     |r| r.get(0),
                 )
                 .unwrap_or(0);
-            FolderInfo { exists: Path::new(&path).is_dir(), path, files: files as usize, chunks: chunks as usize }
+            let personal = !own.contains(&path.to_lowercase());
+            FolderInfo { exists: Path::new(&path).is_dir(), personal, path, files: files as usize, chunks: chunks as usize }
         })
         .collect()
 }
@@ -234,6 +262,7 @@ fn lock_db(db: &Arc<Mutex<DatabaseManager>>) -> Result<std::sync::MutexGuard<'_,
 pub async fn sync(
     db: &Arc<Mutex<DatabaseManager>>,
     current: impl Fn() -> Result<(RagConfig, Embedder), String>,
+    personal: &[String],
     app: &AppHandle,
 ) -> Result<SyncReport, String> {
     if SYNCING.swap(true, Ordering::SeqCst) {
@@ -243,7 +272,7 @@ pub async fn sync(
 
     let (folders, known) = {
         let guard = lock_db(db)?;
-        (load_folders(guard.connection()), known_files(guard.connection())?)
+        (merge_folders(load_folders(guard.connection()), personal), known_files(guard.connection())?)
     };
     if folders.is_empty() && known.is_empty() {
         return Ok(SyncReport::default());
@@ -310,7 +339,16 @@ pub async fn sync_app(app: &AppHandle) -> Result<SyncReport, String> {
     let Some(db) = state.database.clone() else {
         return Err("Knowledge base not initialized".to_string());
     };
-    sync(&db, || super::current(&state), app).await
+    sync(&db, || super::current(&state), &personal_folders(&state), app).await
+}
+
+/// Sync in the background (after a folder is added or removed).
+pub fn spawn_sync(app: AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        if let Err(e) = sync_app(&app).await {
+            log::warn!("RAG folders: sync failed: {}", e);
+        }
+    });
 }
 
 /// Rescan the folders in the background, for as long as the app runs.
@@ -330,6 +368,12 @@ mod tests {
 
     fn file(path: &str, modified_ms: i64, size: i64) -> FoundFile {
         FoundFile { path: path.into(), folder: "F".into(), file_type: "md".into(), modified_ms, size }
+    }
+
+    #[test]
+    fn personal_folders_join_the_saved_ones_once() {
+        let all = merge_folders(vec!["C:/Docs".into()], &["c:/docs".into(), "D:/resume".into(), "D:/resume".into()]);
+        assert_eq!(all, ["C:/Docs", "D:/resume"]);
     }
 
     #[test]
@@ -391,8 +435,9 @@ mod tests {
         record_file(&conn, &f).unwrap();
         conn.execute("INSERT INTO rag_chunks VALUES ('c1', 'C:/b/x.md')", []).unwrap();
         assert_eq!(known_files(&conn).unwrap().get("C:/b/x.md"), Some(&(5, 7)));
-        let info = folder_infos(&conn);
-        assert_eq!((info[0].files, info[0].chunks), (1, 1));
+        let info = folder_infos(&conn, &["c:/B".into(), "D:/notes".into()]);
+        assert_eq!((info[0].files, info[0].chunks, info[0].personal), (1, 1, false));
+        assert_eq!((info.len(), info[1].path.as_str(), info[1].personal), (2, "D:/notes", true));
         forget_file(&conn, "C:/b/x.md").unwrap();
         assert!(known_files(&conn).unwrap().is_empty());
         assert_eq!(conn.query_row("SELECT COUNT(*) FROM rag_chunks", [], |r| r.get::<_, i64>(0)).unwrap(), 0);

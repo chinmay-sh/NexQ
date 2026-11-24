@@ -81,7 +81,7 @@ describe("PersonalSourcesEditor", () => {
     useConfigStore.setState({ llmProvider: "openai" });
     const { container } = render(<PersonalSourcesEditor variant="full" />);
     expect(screen.getByText(SOURCES_GATING_LINE)).toBeInTheDocument();
-    expect(SOURCES_GATING_LINE).toBe("Personal sources work with the subscription providers (Claude, Antigravity, Codex). Switch to one in LLM Providers to use them.");
+    expect(SOURCES_GATING_LINE).toBe("Notes folders are indexed for the meeting copilot with any provider. In Ask, personal sources work only with the subscription providers (Claude, Antigravity, Codex).");
     expect(screen.getByRole("button", { name: /add folder/i })).toBeEnabled();
     expect(screen.getByRole("button", { name: /add server/i })).toBeEnabled();
     const dimmed = container.querySelector(".opacity-60");

@@ -25,7 +25,7 @@ import {
 import { isCliAgent } from "../lib/cliAgents";
 
 export const SOURCES_GATING_LINE =
-  "Personal sources work with the subscription providers (Claude, Antigravity, Codex). Switch to one in LLM Providers to use them.";
+  "Notes folders are indexed for the meeting copilot with any provider. In Ask, personal sources work only with the subscription providers (Claude, Antigravity, Codex).";
 
 interface PersonalSourcesEditorProps {
   /** `compact` on the launcher main screen, `full` in Settings. */

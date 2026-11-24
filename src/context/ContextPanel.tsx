@@ -112,12 +112,13 @@ export function ContextPanel() {
                 <p className="truncate text-xs text-muted-foreground" title={folder.path}>{folder.path}</p>
                 <div className="mt-1 flex items-center gap-2 text-meta text-muted-foreground">
                   <span>{folder.files} files</span><span>{folder.chunks} chunks</span>
+                  {folder.personal && <span>From Personal sources</span>}
                   {!folder.exists && <span className="inline-flex items-center gap-1 font-medium text-amber-500"><AlertTriangle className="h-3 w-3" />Folder not found</span>}
                 </div>
               </div>
-              <button type="button" onClick={() => removeFolder(folder.path)} className="flex-shrink-0 rounded-lg p-1.5 text-muted-foreground/60 transition-colors hover:bg-destructive/10 hover:text-destructive" title={`Remove ${name}`} aria-label={`Remove folder ${name}`}>
+              {!folder.personal && <button type="button" onClick={() => removeFolder(folder.path)} className="flex-shrink-0 rounded-lg p-1.5 text-muted-foreground/60 transition-colors hover:bg-destructive/10 hover:text-destructive" title={`Remove ${name}`} aria-label={`Remove folder ${name}`}>
                 <Trash2 className="h-3.5 w-3.5" />
-              </button>
+              </button>}
             </div>
           );
         })}

@@ -535,7 +535,7 @@ export function LauncherView() {
               <div className="flex-1 border-t border-border/20" />
             </div>
             <p className="text-meta text-muted-foreground/60">
-              For Claude Code, Antigravity and Codex agents. To give the copilot your documents, attach files or add folders in the Context panel.
+              Notes folders are indexed for the meeting copilot, with any AI provider, and kept up to date for every meeting.
             </p>
             <PersonalSourcesEditor variant="compact" />
 
