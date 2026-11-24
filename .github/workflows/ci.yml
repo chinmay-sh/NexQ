@@ -1,11 +1,8 @@
 name: CI
 
+# Manual only in this fork: "Build Windows installer" compiles every push to
+# main. Run this from Actions when the macOS checks and tests are wanted.
 on:
-  pull_request:
-    branches: [main]
-  # Also run on main so the README CI badge reflects the default branch.
-  push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
