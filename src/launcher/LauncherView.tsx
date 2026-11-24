@@ -534,6 +534,9 @@ export function LauncherView() {
               </span>
               <div className="flex-1 border-t border-border/20" />
             </div>
+            <p className="text-meta text-muted-foreground/60">
+              For Claude Code, Antigravity and Codex agents. To give the copilot your documents, attach files or add folders in the Context panel.
+            </p>
             <PersonalSourcesEditor variant="compact" />
 
           </div>

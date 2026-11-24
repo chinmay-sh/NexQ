@@ -18,7 +18,7 @@ use std::collections::HashSet;
 
 const MAX_NEW_CHARS: usize = 6_000;
 const MAX_CONTEXT_CHARS: usize = 3_000;
-const MAX_PASSAGE_CHARS: usize = 1_500;
+const MAX_SCENARIO_CHARS: usize = 1_500;
 const MAX_NOTES_PER_TICK: usize = 8;
 const MAX_CARDS_PER_TICK: usize = 3;
 /// Notes and topics sent back so the model doesn't repeat them.
@@ -91,7 +91,7 @@ Reply with ONLY a JSON object, no other text:
 
 notes: everything in the NEW LINES that belongs in meeting notes: requests, proposals and their numbers, decisions, possible changes, action items (with owner and date when said), and open questions. One short sentence each, keeping names, numbers and dates. Notes are the record of the meeting: a point that also gets a card still gets a note. Never repeat or rephrase anything under NOTES SO FAR. [] when nothing new.
 
-cards: help for what is being discussed right now: answers to questions raised, facts the participants are unsure about, and relevant insights from the user's files under PASSAGES. Each card has a 3 to 8 word topic, 2 to 4 short points, and "files": the ids of the passages it uses ([] if none). Prefer the user's files to general knowledge, never invent facts about the user's own work, and say when general knowledge may be out of date. No card for a topic under ALREADY COVERED unless something new was asked about it. Small talk and scheduling get no card. [] when nothing is worth a card.
+cards: help for what is being discussed right now. Most important: when You talk about, or are asked about, your own experience, skills, projects or background, give a card of talking points You can say next, built from the user's files under PASSAGES: specific projects, technologies, numbers and outcomes, written in the first person ("I ..."). Also: answers to questions raised, facts the participants are unsure about, and relevant insights from the user's files under PASSAGES. Each card has a 3 to 8 word topic, 2 to 4 short points, and "files": the ids of the passages it uses ([] if none). Prefer the user's files to general knowledge, never invent facts about the user's own work, and say when general knowledge may be out of date. No card for a topic under ALREADY COVERED unless something new was asked about it. Small talk and scheduling get no card. [] when nothing is worth a card.
 
 Write notes and cards in English."#;
 
@@ -113,8 +113,10 @@ fn last<'a>(items: &'a [String], n: usize) -> &'a [String] {
 }
 
 /// The system prompt and the user message for one check. `offer_search`
-/// lets the model ask for a web search (timer checks with Tavily).
-pub fn build_messages(req: &CopilotRequest, passages: &[Passage], offer_search: bool) -> (String, String) {
+/// lets the model ask for a web search (timer checks with Tavily);
+/// `scenario` is the active scenario's prompt (what kind of meeting this is).
+/// Passages go in as given: the caller sizes them.
+pub fn build_messages(req: &CopilotRequest, passages: &[Passage], offer_search: bool, scenario: &str) -> (String, String) {
     let mut system = SYSTEM.to_string();
     if req.question().is_some() {
         system.push_str(QUESTION_RULE);
@@ -128,6 +130,7 @@ pub fn build_messages(req: &CopilotRequest, passages: &[Passage], offer_search: 
         }
     };
     let list = |items: &[String]| items.iter().map(|i| format!("- {}", i)).collect::<Vec<_>>().join("\n");
+    section(&mut user, "MEETING TYPE", first_chars(scenario, MAX_SCENARIO_CHARS));
     section(&mut user, "NOTES SO FAR", &list(last(&req.notes, MAX_REMEMBERED)));
     section(&mut user, "ALREADY COVERED", &list(last(&req.covered, MAX_REMEMBERED)));
     section(&mut user, "EARLIER IN THE MEETING", tail(&req.recent_context, MAX_CONTEXT_CHARS));
@@ -135,7 +138,7 @@ pub fn build_messages(req: &CopilotRequest, passages: &[Passage], offer_search: 
     let passages = passages
         .iter()
         .enumerate()
-        .map(|(i, p)| format!("[F{}] {}\n{}", i + 1, p.source, tail_start(&p.text, MAX_PASSAGE_CHARS)))
+        .map(|(i, p)| format!("[F{}] {}\n{}", i + 1, p.source, p.text.trim()))
         .collect::<Vec<_>>()
         .join("\n\n");
     section(&mut user, "PASSAGES", &passages);
@@ -145,8 +148,28 @@ pub fn build_messages(req: &CopilotRequest, passages: &[Passage], offer_search: 
     (system, user.trim_end().to_string())
 }
 
+/// Attached files as passages, whole, until `budget` characters are used up.
+pub fn attached_passages(files: Vec<(String, String)>, budget: usize) -> Vec<Passage> {
+    let mut left = budget;
+    let mut out = Vec::new();
+    for (name, text) in files {
+        if left == 0 {
+            log::warn!("Copilot: attached file {} left out (attachments over {} characters)", name, budget);
+            continue;
+        }
+        let text = text.trim();
+        let kept = first_chars(text, left);
+        if kept.len() < text.len() {
+            log::warn!("Copilot: attached file {} cut to fit {} characters", name, budget);
+        }
+        left -= kept.chars().count();
+        out.push(Passage { source: name, text: kept.to_string() });
+    }
+    out
+}
+
 /// The first `max_chars` characters.
-fn tail_start(text: &str, max_chars: usize) -> &str {
+pub fn first_chars(text: &str, max_chars: usize) -> &str {
     text.char_indices().nth(max_chars).map_or(text, |(i, _)| &text[..i]).trim()
 }
 
@@ -273,10 +296,10 @@ mod tests {
 
     #[test]
     fn messages_carry_every_section_in_order() {
-        let (system, user) = build_messages(&req(), &passages(), false);
+        let (system, user) = build_messages(&req(), &passages(), false, "");
         assert!(!system.contains("A QUESTION is given"));
         assert!(!system.contains("\"search\""));
-        assert!(build_messages(&req(), &[], true).0.contains("\"search\""));
+        assert!(build_messages(&req(), &[], true, "").0.contains("\"search\""));
         let order = ["## NOTES SO FAR\n- Launch moved", "## ALREADY COVERED\n- Falcon", "## EARLIER IN THE MEETING", "## NEW LINES\nThem: Acme", "## PASSAGES\n[F1] E:/deals/acme.xlsx\nAcme 2025", "[F2] notes.md"];
         let mut at = 0;
         for part in order {
@@ -287,9 +310,26 @@ mod tests {
     }
 
     #[test]
+    fn attached_files_go_in_whole_until_the_budget() {
+        let files = vec![("career.md".to_string(), "abcdef\n".to_string()), ("b.md".to_string(), "ghij".to_string()), ("c.md".to_string(), "kl".to_string())];
+        let out = attached_passages(files, 8);
+        assert_eq!(out, [
+            Passage { source: "career.md".into(), text: "abcdef".into() },
+            Passage { source: "b.md".into(), text: "gh".into() },
+        ]);
+    }
+
+    #[test]
+    fn the_meeting_type_comes_first() {
+        let (_, user) = build_messages(&req(), &[], false, "Job interview for a software role.");
+        assert!(user.starts_with("## MEETING TYPE\nJob interview for a software role.\n\n## NOTES SO FAR"));
+        assert!(!build_messages(&req(), &[], false, "  ").1.contains("MEETING TYPE"));
+    }
+
+    #[test]
     fn a_question_adds_the_rule_and_the_section() {
         let r = CopilotRequest { question: Some("  What did we quote Acme? ".into()), ..req() };
-        let (system, user) = build_messages(&r, &[], true);
+        let (system, user) = build_messages(&r, &[], true, "");
         assert!(system.ends_with("Notes may be []."), "a question never offers a search");
         assert!(user.ends_with("## QUESTION\nWhat did we quote Acme?"));
         assert!(!user.contains("PASSAGES"));
@@ -298,7 +338,7 @@ mod tests {
     #[test]
     fn long_text_keeps_the_newest_part() {
         let r = CopilotRequest { new_lines: format!("{}END", "x".repeat(10_000)), ..Default::default() };
-        let (_, user) = build_messages(&r, &[], false);
+        let (_, user) = build_messages(&r, &[], false, "");
         assert!(user.ends_with("END"));
         assert!(user.len() < 6_100);
     }

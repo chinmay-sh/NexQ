@@ -12,6 +12,11 @@ use crate::state::AppState;
 
 /// Most knowledge-base passages offered per check.
 const MAX_PASSAGES: usize = 6;
+/// Longest knowledge-base passage (a chunk is ~512 tokens).
+const MAX_PASSAGE_CHARS: usize = 2_000;
+/// Attached files go in whole, up to this much text in all (~15k tokens).
+// shortcut: files past the budget are cut off, not searched; index them (folders) when attachments grow that large.
+const MAX_ATTACHED_CHARS: usize = 60_000;
 /// Web results added for a question or a requested search.
 const MAX_WEB_RESULTS: usize = 5;
 /// Credential holding the Tavily API key.
@@ -29,8 +34,18 @@ pub async fn copilot_tick(app: AppHandle, request: CopilotRequest) -> Result<Cop
         return Ok(CopilotResponse::default());
     }
     let state = app.state::<AppState>();
+    let scenario = state.active_scenario.read().map(|s| s.system_prompt.clone()).unwrap_or_default();
 
-    // The user's files: BM25 (or hybrid) passages matching the question or what was just said.
+    // Attached files go in whole, like Meetily: a few documents fit, and the
+    // model sees all of them instead of a few matching snippets.
+    let attached = state
+        .context
+        .as_ref()
+        .and_then(|c| c.lock().ok().map(|c| c.resource_texts()))
+        .unwrap_or_default();
+    let attached = copilot::attached_passages(attached, MAX_ATTACHED_CHARS);
+
+    // Folder files: BM25 (or hybrid) passages matching the question or what was just said.
     let query = request.question().map(str::to_string);
     let excerpt = tail(&request.new_lines, QUERY_CHARS);
     let top_k = state
@@ -40,7 +55,13 @@ pub async fn copilot_tick(app: AppHandle, request: CopilotRequest) -> Result<Cop
         .unwrap_or(5)
         .min(MAX_PASSAGES);
     let passages: Vec<Passage> = match crate::commands::intelligence_commands::retrieve_rag(&state, query, excerpt, top_k).await {
-        Ok(found) => found.chunks.into_iter().map(|c| Passage { source: c.source, text: c.text }).collect(),
+        Ok(found) => found
+            .chunks
+            .into_iter()
+            // An attached file that is also indexed is already in whole.
+            .filter(|c| !attached.iter().any(|a| a.source == c.source))
+            .map(|c| Passage { text: copilot::first_chars(&c.text, MAX_PASSAGE_CHARS).to_string(), source: c.source })
+            .collect(),
         Err(e) => {
             log::warn!("Copilot: knowledge-base search failed: {}", e);
             Vec::new()
@@ -50,13 +71,13 @@ pub async fn copilot_tick(app: AppHandle, request: CopilotRequest) -> Result<Cop
     let (provider, model, native_search) = copilot_provider(&state, request.model.as_deref())?;
     // Web: the provider's own search (Gemini, OpenRouter), else Tavily when a key is saved.
     let tavily = (request.web_search && !native_search).then(|| credential(&state, TAVILY_KEY)).flatten();
-    let mut passages = passages;
+    let mut passages: Vec<Passage> = attached.into_iter().chain(passages).collect();
     if let (Some(key), Some(q)) = (tavily.as_deref(), request.question()) {
         passages.extend(web_passages(key, q).await);
     }
 
     let ask = |request: &CopilotRequest, passages: &[Passage], offer_search: bool| {
-        let (system, user) = copilot::build_messages(request, passages, offer_search);
+        let (system, user) = copilot::build_messages(request, passages, offer_search, &scenario);
         vec![LLMMessage { role: "system".into(), content: system }, LLMMessage { role: "user".into(), content: user }]
     };
     let native = request.web_search && native_search;

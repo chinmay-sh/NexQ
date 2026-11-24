@@ -283,6 +283,15 @@ impl ContextManager {
         parts.join("\n")
     }
 
+    /// Each attached file's name and extracted text, in the order attached.
+    pub fn resource_texts(&self) -> Vec<(String, String)> {
+        self.resources
+            .iter()
+            .filter_map(|r| self.cache.get(&r.id).map(|c| (r.name.clone(), c.text.clone())))
+            .filter(|(_, text)| !text.trim().is_empty())
+            .collect()
+    }
+
     /// Set custom instructions text.
     pub fn set_custom_instructions(&mut self, text: &str) {
         self.custom_instructions = text.to_string();

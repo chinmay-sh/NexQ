@@ -84,45 +84,44 @@ export function ContextPanel() {
       {/* File upload area */}
       <FileUpload />
 
-      {contextStrategy === "local_rag" && (
-        <section className="space-y-2.5" aria-labelledby="rag-folders-heading">
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <Folder className="h-3.5 w-3.5 text-muted-foreground" />
-              <h3 id="rag-folders-heading" className="text-xs font-medium text-muted-foreground">Folders ({folders.length})</h3>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <button type="button" onClick={() => syncFolders()} disabled={isSyncingFolders} className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50" title="Rescan folders">
-                {isSyncingFolders ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />} Rescan
-              </button>
-              <button type="button" onClick={handleAddFolder} disabled={isAddingFolder} className="inline-flex items-center gap-1 rounded-lg bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/15 disabled:opacity-50">
-                {isAddingFolder ? <Loader2 className="h-3 w-3 animate-spin" /> : <FolderPlus className="h-3 w-3" />} Add folder
-              </button>
-            </div>
+      {/* Shown under every strategy: the meeting copilot searches these folders. */}
+      <section className="space-y-2.5" aria-labelledby="rag-folders-heading">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Folder className="h-3.5 w-3.5 text-muted-foreground" />
+            <h3 id="rag-folders-heading" className="text-xs font-medium text-muted-foreground">Folders ({folders.length})</h3>
           </div>
-          {folders.length === 0 ? (
-            <p className="rounded-lg border border-dashed border-border/40 px-3 py-3 text-xs text-muted-foreground">Add a folder to index its supported files in place.</p>
-          ) : folders.map((folder) => {
-            const name = folder.path.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || folder.path;
-            return (
-              <div key={folder.path} className="group flex min-w-0 items-center gap-3 rounded-xl border border-border/40 bg-secondary/20 p-3">
-                <Folder className="h-4 w-4 flex-shrink-0 text-primary/70" />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-foreground" title={folder.path}>{name}</p>
-                  <p className="truncate text-xs text-muted-foreground" title={folder.path}>{folder.path}</p>
-                  <div className="mt-1 flex items-center gap-2 text-meta text-muted-foreground">
-                    <span>{folder.files} files</span><span>{folder.chunks} chunks</span>
-                    {!folder.exists && <span className="inline-flex items-center gap-1 font-medium text-amber-500"><AlertTriangle className="h-3 w-3" />Folder not found</span>}
-                  </div>
+          <div className="flex items-center gap-1.5">
+            <button type="button" onClick={() => syncFolders()} disabled={isSyncingFolders} className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50" title="Rescan folders">
+              {isSyncingFolders ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />} Rescan
+            </button>
+            <button type="button" onClick={handleAddFolder} disabled={isAddingFolder} className="inline-flex items-center gap-1 rounded-lg bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/15 disabled:opacity-50">
+              {isAddingFolder ? <Loader2 className="h-3 w-3 animate-spin" /> : <FolderPlus className="h-3 w-3" />} Add folder
+            </button>
+          </div>
+        </div>
+        {folders.length === 0 ? (
+          <p className="rounded-lg border border-dashed border-border/40 px-3 py-3 text-xs text-muted-foreground">Add a folder to index its supported files in place. The meeting copilot searches them (with Local RAG, so does Ask).</p>
+        ) : folders.map((folder) => {
+          const name = folder.path.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || folder.path;
+          return (
+            <div key={folder.path} className="group flex min-w-0 items-center gap-3 rounded-xl border border-border/40 bg-secondary/20 p-3">
+              <Folder className="h-4 w-4 flex-shrink-0 text-primary/70" />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium text-foreground" title={folder.path}>{name}</p>
+                <p className="truncate text-xs text-muted-foreground" title={folder.path}>{folder.path}</p>
+                <div className="mt-1 flex items-center gap-2 text-meta text-muted-foreground">
+                  <span>{folder.files} files</span><span>{folder.chunks} chunks</span>
+                  {!folder.exists && <span className="inline-flex items-center gap-1 font-medium text-amber-500"><AlertTriangle className="h-3 w-3" />Folder not found</span>}
                 </div>
-                <button type="button" onClick={() => removeFolder(folder.path)} className="flex-shrink-0 rounded-lg p-1.5 text-muted-foreground/60 transition-colors hover:bg-destructive/10 hover:text-destructive" title={`Remove ${name}`} aria-label={`Remove folder ${name}`}>
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
               </div>
-            );
-          })}
-        </section>
-      )}
+              <button type="button" onClick={() => removeFolder(folder.path)} className="flex-shrink-0 rounded-lg p-1.5 text-muted-foreground/60 transition-colors hover:bg-destructive/10 hover:text-destructive" title={`Remove ${name}`} aria-label={`Remove folder ${name}`}>
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          );
+        })}
+      </section>
 
       {/* Loaded resources list */}
       {resources.length > 0 && (
