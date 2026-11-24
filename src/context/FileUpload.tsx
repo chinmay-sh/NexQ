@@ -138,6 +138,9 @@ export function FileUpload() {
             <p className="mt-1 text-xs text-muted-foreground">
               PDF, Office, Markdown, and code files
             </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              For a whole folder, use Add folder below
+            </p>
             <button
               onClick={handleBrowse}
               className="mt-3 rounded-lg border border-primary/20 bg-primary/5 px-4 py-1.5 text-xs font-medium text-primary transition-colors hover:bg-primary/10 hover:text-primary"
