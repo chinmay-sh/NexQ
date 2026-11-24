@@ -11,6 +11,7 @@ vi.mock("@tauri-apps/plugin-store", () => ({
 }));
 
 import { BUILT_IN_SCENARIOS } from "../lib/scenarios";
+import type { PartyAudioConfig } from "../lib/types";
 import { useMeetingStore } from "./meetingStore";
 import { useScenarioStore } from "./scenarioStore";
 
@@ -49,6 +50,24 @@ it("keeps the meeting open if the MAI transcript is still draining", async () =>
   await expect(meetings.endMeetingFlow()).rejects.toThrow("press End again");
   expect(useMeetingStore.getState().activeMeeting?.id).toBe("meeting-1");
   expect(calls.has("end_meeting")).toBe(false);
+});
+
+it("starts an online meeting with the mic live after an in-person one muted it", async () => {
+  const { useConfigStore } = await import("./configStore");
+  const mic: PartyAudioConfig = { role: "You", device_id: "default", is_input_device: true, stt_provider: "deepgram" };
+  const speakers: PartyAudioConfig = { role: "Them", device_id: "Speakers", is_input_device: false, stt_provider: "deepgram" };
+  useConfigStore.setState({ meetingAudioConfig: { you: mic, them: speakers, recording_enabled: false, preset_name: null } });
+
+  await useMeetingStore.getState().startMeetingFlow("Viva", "in_person", "team_meeting");
+  expect(calls.get("set_source_muted")).toEqual({ source: "you", muted: true });
+  expect(useConfigStore.getState().mutedYou).toBe(true);
+  useMeetingStore.getState().stopTimer();
+  useMeetingStore.setState({ activeMeeting: null, isRecording: false });
+
+  await useMeetingStore.getState().startMeetingFlow("Standup", "online", "team_meeting");
+  expect(calls.get("set_source_muted")).toEqual({ source: "you", muted: false });
+  expect(useConfigStore.getState().mutedYou).toBe(false);
+  useConfigStore.setState({ meetingAudioConfig: null, mutedYou: false });
 });
 
 afterEach(() => {

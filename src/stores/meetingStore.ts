@@ -228,21 +228,20 @@ export const useMeetingStore = create<MeetingState>((set, get) => ({
         // 3. Start audio capture — use per-party config if available, else legacy
         try {
           if (config.meetingAudioConfig) {
+            // In-person mode mutes "you" (the room mic captures everyone, and a separate mic
+            // would duplicate it as "You"). Every meeting sets it, so an online meeting after
+            // an in-person one doesn't start with the mic still muted.
+            const muteYou = resolvedMode === "in_person";
+            try {
+              const { setSourceMuted } = await import("../lib/ipc");
+              await setSourceMuted("you", muteYou);
+              (await import("./configStore")).useConfigStore.setState({ mutedYou: muteYou });
+            } catch { /* non-critical */ }
             await startCapturePerParty(
               config.meetingAudioConfig.you,
               config.meetingAudioConfig.them,
               { skipYouStt: skipYouStt(resolvedMode) }
             );
-            // In-person mode: mute "you" source — room mic captures everyone,
-            // separate mic capture is redundant and creates duplicate "You" transcripts.
-            if (resolvedMode === "in_person") {
-              try {
-                const { setSourceMuted } = await import("../lib/ipc");
-                await setSourceMuted("you", true);
-                // Also set the UI mute state
-                (await import("./configStore")).useConfigStore.setState({ mutedYou: true });
-              } catch { /* non-critical */ }
-            }
           } else {
             // Legacy fallback: use old mic + system device IDs
             const micId = config.micDeviceId || "default";
